@@ -122,44 +122,49 @@ This integration fires the following event:
 
 ## Example Automations
 
-### 1. Log Shot Data to InfluxDB
+### 1. Log Shot Data via MQTT
 
-This example assumes you have the InfluxDB integration set up in Home Assistant.
+A flexible way to log your espresso shot data is to publish it to an MQTT topic. From there, various tools (like Telegraf, Node-RED, or custom scripts) can subscribe to this topic and write the data to InfluxDB or other databases.
+
+**Example Automation: Publish Shot Data to MQTT**
+
+This automation will publish the full `EVENT_BOOKOO_SHOT_COMPLETED` event data as a JSON payload to a specified MQTT topic.
 
 ```yaml
-automation:
-  - alias: "Log Bookoo Espresso Shot to InfluxDB"
-    trigger:
-      - platform: event
-        event_type: bookoo_shot_completed
-    action:
-      - service: influxdb.write
-        data_template:
-          measurement: "espresso_shot"
-          tags:
-            device_id: "{{ trigger.event.data.device_id }}"
-            coffee_name: "{{ trigger.event.data.input_parameters.coffee_name | default('Unknown') }}" # Ensure 'coffee_name' is a key you expect
-            bean_weight_grams_input: "{{ trigger.event.data.input_parameters.bean_weight | default(0) }}" # Ensure 'bean_weight' is a key you expect
-            start_trigger: "{{ trigger.event.data.start_trigger }}"
-            stop_reason: "{{ trigger.event.data.stop_reason }}"
-            status: "{{ trigger.event.data.status }}"
-          fields:
-            duration_seconds: "{{ trigger.event.data.duration_seconds }}"
-            final_weight_grams: "{{ trigger.event.data.final_weight_grams }}"
-            # New aggregate metrics:
-            average_flow_rate_gps: "{{ trigger.event.data.average_flow_rate_gps | float(0) }}"
-            peak_flow_rate_gps: "{{ trigger.event.data.peak_flow_rate_gps | float(0) }}"
-            time_to_first_flow_seconds: "{{ trigger.event.data.time_to_first_flow_seconds | float(0) if trigger.event.data.time_to_first_flow_seconds is not none else 0 }}"
-            time_to_peak_flow_seconds: "{{ trigger.event.data.time_to_peak_flow_seconds | float(0) if trigger.event.data.time_to_peak_flow_seconds is not none else 0 }}"
-            # The raw bean_weight from input_parameters might be a string, ensure it's a float for InfluxDB
-            bean_weight_grams: "{{ trigger.event.data.input_parameters.bean_weight | float(0) }}" # Redundant if tagged, but good for fields
-            # Full profiles are still available if needed, but might be large for direct logging
-            # flow_profile_raw: "{{ trigger.event.data.flow_profile }}"
-            # scale_timer_profile_raw: "{{ trigger.event.data.scale_timer_profile }}"
-          timestamp: "{{ trigger.event.data.start_time_utc }}" # Use shot start time for the InfluxDB point
+alias: Publish Bookoo Espresso Shot to MQTT
+trigger:
+  - platform: event
+    event_type: bookoo_shot_completed
+action:
+  - service: mqtt.publish
+    data:
+      topic: "bookoo/shot/completed" # Choose your desired MQTT topic
+      payload_template: "{{ trigger.event.data | tojson }}" # Convert event data to JSON string
+      retain: false # Set to true if you want the last message to be retained
 ```
 
-**Note on Time-Series Data:** Key aggregate metrics like average and peak flow rates are now directly available in the event payload. For more detailed analysis of the full `flow_profile` and `scale_timer_profile` arrays, consider using a Python script or AppDaemon app triggered by the event to process these arrays and write multiple points to InfluxDB if needed.
+**Consuming MQTT Data and Sending to InfluxDB:**
+
+Once the data is on the MQTT topic, you have several options to get it into InfluxDB:
+
+1.  **Telegraf:**
+    *   Telegraf has an [MQTT consumer input plugin](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/mqtt_consumer) and an [InfluxDB output plugin](https://github.com/influxdata/telegraf/tree/master/plugins/outputs/influxdb_v2).
+    *   You can configure Telegraf to subscribe to `bookoo/shot/completed`, parse the JSON payload (using `data_format = "json"` and potentially `json_v2` processor for complex parsing/tagging), and write it to InfluxDB. This is a very popular and efficient method.
+
+2.  **Node-RED:**
+    *   Use an "MQTT in" node to subscribe to the topic.
+    *   Use a "function" node to transform the JSON payload if needed.
+    *   Use an "InfluxDB out" node to write the data.
+
+3.  **Custom Script (Python, etc.):**
+    *   Write a script that subscribes to the MQTT topic using a client library (e.g., Paho MQTT for Python) and then writes to InfluxDB using an InfluxDB client library.
+
+**Advantages of MQTT:**
+*   **Decoupling:** Home Assistant only needs to publish the data; other services handle the ingestion into InfluxDB.
+*   **Flexibility:** Multiple subscribers can consume the shot data for different purposes.
+*   **Resilience:** If your InfluxDB instance is temporarily down, MQTT can often buffer messages (depending on broker configuration and QoS).
+
+This MQTT approach provides a clean separation of concerns and leverages a standard messaging protocol.
 
 ### 2. Send a Notification on Shot Completion
 
@@ -183,7 +188,9 @@ automation:
 
 ## Querying Data from InfluxDB
 
-If you are logging your espresso shot data to InfluxDB using the example automation, here are some InfluxQL queries you can use to retrieve and analyze your data. These can be used in tools like Grafana or the InfluxDB Chronograf interface.
+If you are logging your espresso shot data to InfluxDB (e.g., via MQTT and Telegraf as described above), here are some InfluxQL queries you can use. These assume your Telegraf (or other consumer) configuration results in a measurement named `espresso_shot` with tags and fields derived from the JSON payload.
+
+**Assumed Measurement (after MQTT processing):** `espresso_shot`
 
 **Measurement:** `espresso_shot`
 
