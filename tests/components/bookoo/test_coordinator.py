@@ -867,4 +867,4 @@ class TestBookooCoordinator:
         await asyncio.sleep(0)
 
         mock_stop_session.assert_called_once_with(stop_reason="ha_service")
-        mock_scale.async_send_command.assert_called_once_with("stopTimer")
+        mock_scale.stop_timer.assert_called_once_with()
