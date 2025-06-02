@@ -135,93 +135,64 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                         self.hass.async_create_task(
                             self._stop_session(stop_reason="scale_auto_stop_decoded")
                         )
-                    else:
-                        _LOGGER.debug(
-                            "Scale auto-timer stop event (decoded via type/event) received, but no shot active."
-                        )
-                else:
-                    _LOGGER.debug("Received other or unrecognized decoded command data structure: %s", decoded_cmd_data)
-                    # TODO: Handle other types of command characteristic responses if necessary
-            else:
-                _LOGGER.debug("Command char data not decoded into a dict or was None: %s. Raw byte checks might be needed if this is unexpected.", decoded_cmd_data)
-                # Fallback to raw byte checks if aiobookoo_decode doesn't handle it (for now, keeping original logic as fallback)
-                # This section can be removed if aiobookoo_decode is confirmed to handle all command char events.
-                if (
-                    len(data) >= 3 # Corrected length check for data[2]
-                    and data[0] == 0x03 # CMD_BYTE1_PRODUCT_NUMBER
-                    and data[1] == 0x0D # CMD_BYTE2_MESSAGE_TYPE_AUTO_TIMER
-                    and data[2] == 0x01 # CMD_BYTE3_AUTO_TIMER_EVENT_START
-                ):
-                    if not self.is_shot_active:
-                        _LOGGER.info("Scale auto-timer (raw) started shot.")
-                        self.hass.async_create_task(
-                            self._start_session(trigger="scale_auto_raw")
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Scale auto-timer start event (raw) received, but shot already active."
-                        )
-                elif (
-                    len(data) >= 3 # Corrected length check for data[2]
-                    and data[0] == 0x03
-                    and data[1] == 0x0D
-                    and data[2] == 0x00 # CMD_BYTE3_AUTO_TIMER_EVENT_STOP
-                ):
-                    if self.is_shot_active:
-                        _LOGGER.info("Scale auto-timer (raw) stopped shot.")
-                        self.hass.async_create_task(
-                            self._stop_session(stop_reason="scale_auto_stop_raw")
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Scale auto-timer stop event (raw) received, but no shot active."
-                        )
-
-        elif source == UPDATE_SOURCE_WEIGHT_CHAR and self.is_shot_active:
-            _LOGGER.debug(
-                "[HANDLE_CHAR_DEBUG] Entered WEIGHT_CHAR block. Source: '%s', Active: %s", 
-                source, self.is_shot_active
-            )
-            if not self.session_start_time_utc: # Safety check
-                _LOGGER.warning("WEIGHT_CHAR: Shot active but session_start_time_utc is None. Aborting update.")
-                return
-
-            try:
-                decoded_data = aiobookoo_decode(data) if data else None
-                _LOGGER.debug("[HANDLE_CHAR_DEBUG] decoded_data (weight): %s (type: %s)", decoded_data, type(decoded_data).__name__)
-
-                if not decoded_data:
-                    _LOGGER.error("Received None from aiobookoo_decode for weight char update.")
-                    return
-                if not isinstance(decoded_data, dict):
                     _LOGGER.error(
-                        "aiobookoo_decode did not return a dict for weight char. Got: %s (type: %s)",
-                        decoded_data, type(decoded_data).__name__
+                        "Error processing updated scale properties during active shot: %s", e, exc_info=True
                     )
-                    return
+            
+            # Always update listeners for weight changes, so all sensors (weight, flow, timer, battery) get refreshed
+            self.async_update_listeners()
+            return
 
-                current_time = dt_util.utcnow()
-                elapsed_shot_time = round(
-                    (current_time - self.session_start_time_utc).total_seconds(), 2
-                )
-
-                timer_milliseconds = decoded_data.get("timer_milliseconds") # Expecting int or None
-                flow_rate = decoded_data.get("flow_rate", 0.0) # Expecting float or None, default to 0.0
-
-                self.session_flow_profile.append((elapsed_shot_time, flow_rate))
-                self.session_scale_timer_profile.append(
-                    (elapsed_shot_time, timer_milliseconds if timer_milliseconds is not None else 0)
-                )
+        elif source == UPDATE_SOURCE_COMMAND_CHAR:
+            # For command characteristic, 'data' should be a pre-decoded dict for known commands (like auto-timer)
+            # from BookooScale, or raw bytes if BookooScale couldn't decode it into a dict.
+            
+            if isinstance(data, dict): # Pre-decoded by BookooScale
+                event_type = data.get("type")
+                event_action = data.get("event")
                 
-                # Update live sensors via listeners for this specific update
-                self.async_update_listeners()
-            except Exception as e:
-                _LOGGER.error(
-                    "Error processing weight data during active shot: %s", e, exc_info=True
-                )
-            return # Finished processing weight char update
+                if event_type == "auto_timer":
+                    if event_action == "start" and not self.is_shot_active:
+                        _LOGGER.info("Auto-timer start event detected by scale (decoded by library).")
+                        self._start_session(trigger="scale_auto_timer")
+                    elif event_action == "stop" and self.is_shot_active:
+                        _LOGGER.info("Auto-timer stop event detected by scale (decoded by library).")
+                        self._stop_session(stop_reason="scale_auto_timer")
+                    else:
+                        _LOGGER.debug("Auto-timer event (%s) received but state condition not met (active: %s).", event_action, self.is_shot_active)
+                else:
+                    _LOGGER.debug("Received known dict from command char, but not 'auto_timer' type: %s", data)
+            
+            elif isinstance(data, bytes): # Raw bytes, BookooScale didn't decode to dict
+                _LOGGER.debug("Received raw bytes from command char: %s. Attempting coordinator-level parse for legacy auto-timer.", data.hex())
+                # Legacy raw byte parsing for auto-timer as a fallback or for other commands
+                if len(data) >= 3 and data[0] == 0x03 and data[1] == 0x0D: # Check for 0x030D auto-timer prefix
+                    if data[2] == 0x01: # CMD_BYTE3_AUTO_TIMER_EVENT_START
+                        if not self.is_shot_active:
+                            _LOGGER.info("Auto-timer start event detected by scale (parsed raw by coordinator).")
+                            self._start_session(trigger="scale_auto_timer_raw")
+                        else:
+                            _LOGGER.debug("Scale auto-timer start event (raw) received, but shot already active.")
+                    elif data[2] == 0x00: # CMD_BYTE3_AUTO_TIMER_EVENT_STOP
+                        if self.is_shot_active:
+                            _LOGGER.info("Scale auto-timer stop event detected by scale (parsed raw by coordinator).")
+                            self._stop_session(stop_reason="scale_auto_timer_raw")
+                        else:
+                            _LOGGER.debug("Scale auto-timer stop event (raw) received, but no shot active.")
+                    else:
+                        _LOGGER.debug("Known auto-timer prefix (0x030D) but unknown event byte %02x.", data[2])
+                else:
+                    _LOGGER.debug("Raw command char data not recognized as 0x030D auto-timer: %s", data.hex())
+            
+            else:
+                _LOGGER.debug("Received unexpected data type from command char: %s (%s)", data, type(data).__name__)
+            
+            self.async_update_listeners() # Update listeners after processing any command char data
+            return
 
-        self.async_update_listeners()  # General update for any other listeners/sensors
+        # For unknown_char_update or if logic falls through without returning
+        _LOGGER.debug("Unhandled characteristic update source or data type: %s", source)
+        self.async_update_listeners()
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
