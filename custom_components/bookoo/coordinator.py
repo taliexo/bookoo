@@ -240,8 +240,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         _LOGGER.info("HA service starting shot.")
         await self._start_session(trigger="ha_service")
         try:
-            # Assuming aiobookoo has an async_tare_and_start_timer method
-            await self.scale.async_send_command("tareAndStartTime")
+            # Call the correct method on the scale object, which internally uses async_send_command
+            await self.scale.tare_and_start_timer()
             _LOGGER.debug("Sent Tare & Start Timer command to scale.")
         except BookooError as e:
             _LOGGER.error("Error sending Tare & Start Timer command to scale: %s", e)
