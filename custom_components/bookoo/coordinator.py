@@ -23,7 +23,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_IS_VALID_SCALE,
     EVENT_BOOKOO_SHOT_COMPLETED,
+    OPTION_MIN_SHOT_DURATION,
+    OPTION_LINKED_BEAN_WEIGHT_ENTITY,
+    OPTION_LINKED_COFFEE_NAME_ENTITY,
 )  # Assuming DOMAIN is needed for event firing context
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE # For reading entity states
 
 SCAN_INTERVAL = timedelta(seconds=5)
 
@@ -64,10 +68,37 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.session_start_trigger: str | None = None
         self.last_shot_data: dict[str, Any] = {} # Initialized here
 
+        # Load options
+        self.min_shot_duration: int = 10 # Default
+        self.linked_bean_weight_entity_id: str | None = None
+        self.linked_coffee_name_entity_id: str | None = None
+        self._load_options() # Load initial options
+
+        # Listener for options updates
+        self._options_update_listener = entry.add_update_listener(self._options_update_callback)
+
     @property
     def scale(self) -> BookooScale:
         """Return the scale object."""
         return self._scale
+
+    def _load_options(self) -> None:
+        """Load options from the config entry."""
+        self.min_shot_duration = self.config_entry.options.get(OPTION_MIN_SHOT_DURATION, 10)
+        self.linked_bean_weight_entity_id = self.config_entry.options.get(OPTION_LINKED_BEAN_WEIGHT_ENTITY)
+        self.linked_coffee_name_entity_id = self.config_entry.options.get(OPTION_LINKED_COFFEE_NAME_ENTITY)
+        _LOGGER.debug(
+            "Loaded options: Min Duration=%s, Bean Weight Entity=%s, Coffee Name Entity=%s",
+            self.min_shot_duration,
+            self.linked_bean_weight_entity_id,
+            self.linked_coffee_name_entity_id
+        )
+
+    async def _options_update_callback(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Handle options update."""
+        _LOGGER.debug("Bookoo options updated, reloading.")
+        self._load_options()
+        # If options affect sensors directly, you might trigger self.async_update_listeners() here
 
     def _handle_characteristic_update(self, source: str, data: bytes | None) -> None:
         """Handle updates from aiobookoo's characteristic_update_callback."""
@@ -266,46 +297,37 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
     async def _start_session(self, trigger: str) -> None:
         """Internal method to start a new shot session."""
         if self.is_shot_active:
-            # This case should ideally be caught by callers
             _LOGGER.warning(
-                "Attempted to start a session when one is already active. Trigger: %s",
-                trigger,
+                "Attempted to start a new shot session (trigger: %s) but one is already active.", trigger
             )
             return
 
+        _LOGGER.info("Starting new shot session, triggered by: %s", trigger)
         self.is_shot_active = True
         self.session_start_time_utc = dt_util.utcnow()
         self.session_flow_profile = []
         self.session_scale_timer_profile = []
         self.session_start_trigger = trigger
+        self.session_input_parameters = {} # Clear/initialize for the new session
 
-        # Capture input parameters from linked entities
-        self.session_input_parameters = {}
-        options = self.config_entry.options
+        # Read linked input_number/input_text entities
+        if self.linked_bean_weight_entity_id:
+            bean_weight_state = self.hass.states.get(self.linked_bean_weight_entity_id)
+            if bean_weight_state and bean_weight_state.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]:
+                self.session_input_parameters["bean_weight"] = bean_weight_state.state
+                _LOGGER.debug("Logged bean_weight: %s from %s", bean_weight_state.state, self.linked_bean_weight_entity_id)
+            else:
+                _LOGGER.warning("Could not read state for linked bean weight entity: %s", self.linked_bean_weight_entity_id)
+        
+        if self.linked_coffee_name_entity_id:
+            coffee_name_state = self.hass.states.get(self.linked_coffee_name_entity_id)
+            if coffee_name_state and coffee_name_state.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]:
+                self.session_input_parameters["coffee_name"] = coffee_name_state.state
+                _LOGGER.debug("Logged coffee_name: %s from %s", coffee_name_state.state, self.linked_coffee_name_entity_id)
+            else:
+                _LOGGER.warning("Could not read state for linked coffee name entity: %s", self.linked_coffee_name_entity_id)
 
-        bean_weight_entity_id = options.get("linked_bean_weight_entity")
-        if bean_weight_entity_id and (
-            bean_weight_state := self.hass.states.get(bean_weight_entity_id)
-        ):
-            self.session_input_parameters["bean_weight_grams"] = bean_weight_state.state
-
-        coffee_name_entity_id = options.get("linked_coffee_name_entity")
-        if coffee_name_entity_id and (
-            coffee_name_state := self.hass.states.get(coffee_name_entity_id)
-        ):
-            self.session_input_parameters["coffee_name"] = coffee_name_state.state
-
-        # Add logic for other linked entities here, e.g.:
-        # target_weight_entity_id = options.get("linked_target_weight_entity")
-        # if target_weight_entity_id and (target_weight_state := self.hass.states.get(target_weight_entity_id)):
-        #     self.session_input_parameters["target_weight_grams"] = target_weight_state.state
-        _LOGGER.info(
-            "Espresso shot session started. Trigger: %s, Start time: %s, Inputs: %s",
-            trigger,
-            self.session_start_time_utc,
-            self.session_input_parameters,
-        )
-        self.async_update_listeners()  # Update binary sensor, etc.
+        self.async_update_listeners()  # Notify HA about state change (e.g., binary_sensor)
 
     async def _stop_session(self, stop_reason: str) -> None:
         """Internal method to stop the current shot session."""
@@ -315,91 +337,84 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             )
             return
 
-        session_end_time_utc = dt_util.utcnow()
-        duration = (session_end_time_utc - self.session_start_time_utc).total_seconds()
+        current_time = dt_util.utcnow()
+        shot_duration = (current_time - self.session_start_time_utc).total_seconds()
+        _LOGGER.info(
+            "Stopping shot session (reason: %s). Duration: %.2f seconds.",
+            stop_reason,
+            shot_duration,
+        )
 
-        # Retrieve minimum shot duration from config entry options
-        min_duration = self.config_entry.options.get("minimum_shot_duration_seconds", 5)
-        _LOGGER.debug("Using minimum shot duration: %s seconds", min_duration)
-
-        final_weight = self.scale.weight  # Get final weight from scale
         shot_status = "completed"
+        # Preserve start time and inputs for potential 'aborted_too_short' last_shot_data
+        # Ensure self.session_start_time_utc is not None before calling isoformat
+        original_start_time_utc_iso = self.session_start_time_utc.isoformat() if self.session_start_time_utc else None
+        original_start_trigger = self.session_start_trigger
+        original_input_params = dict(self.session_input_parameters) # Make a copy before it's cleared
 
-        if stop_reason == "disconnected":
-            shot_status = "aborted_disconnected"
-            _LOGGER.warning(
-                "Shot session aborted due to disconnection. Duration: %.2f s", duration
-            )
-        elif duration < min_duration:
-            shot_status = "aborted_too_short"
+        if stop_reason not in ["disconnected", "ha_service_stop_forced"] and shot_duration < self.min_shot_duration:
             _LOGGER.info(
-                "Shot session ended but was too short (%.2f s) to be recorded. Min duration: %s s. Reason: %s",
-                duration,
-                min_duration,
-                stop_reason,
+                "Shot duration (%.2f s) is less than minimum configured (%s s). Aborting full log.",
+                shot_duration, self.min_shot_duration
             )
-            # Populate last_shot_data for aborted_too_short shots
-            self.last_shot_data = {
-                "device_id": self.config_entry.unique_id,
-                "entry_id": self.config_entry.entry_id,
-                "start_time_utc": self.session_start_time_utc.isoformat() if self.session_start_time_utc else None,
-                "end_time_utc": session_end_time_utc.isoformat(),
-                "duration_seconds": round(duration, 2),
-                "final_weight_grams": final_weight if final_weight is not None else 0.0,
-                "flow_profile_gps": [
-                    (round(t, 2), round(f, 2)) for t, f in self.session_flow_profile
-                ],
-                "scale_timer_profile_ms": [
-                    (round(t, 2), ms) for t, ms in self.session_scale_timer_profile
-                ],
-                "input_parameters": dict(self.session_input_parameters), # Use a copy before it's reset
-                "start_trigger": self.session_start_trigger,
-                "stop_reason": stop_reason,
-                "status": shot_status, # This will be "aborted_too_short"
-            }
+            shot_status = "aborted_too_short"
             
-            # Reset session state
+            self.last_shot_data = {
+                "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
+                "start_time_utc": original_start_time_utc_iso,
+                "end_time_utc": current_time.isoformat(),
+                "duration_seconds": round(shot_duration, 2),
+                "status": shot_status,
+                "start_trigger": original_start_trigger,
+                "stop_reason": stop_reason,
+                "input_parameters": original_input_params,
+                "final_weight_grams": 0.0, # No reliable final weight for aborted short shot
+                "flow_profile": [], # No profile for aborted short shot
+                "scale_timer_profile": [], # No profile for aborted short shot
+            }
+            # Reset session variables
             self.is_shot_active = False
             self.session_start_time_utc = None
             self.session_flow_profile = []
             self.session_scale_timer_profile = []
-            self.session_input_parameters = {}
             self.session_start_trigger = None
-            self.async_update_listeners()
-            return  # Do not fire event for too-short shots
+            self.session_input_parameters = {}
+            self.async_update_listeners() # Notify HA about state change (shot ended)
+            return # Do not fire full event for aborted short shot
 
-        _LOGGER.debug("[STOP_SESSION_DEBUG] self.session_input_parameters before event_data: %s", self.session_input_parameters)
+        # For completed shots:
+        final_weight_grams = self.scale.weight if self.scale.weight is not None else 0.0
+        if not self.session_flow_profile and final_weight_grams == 0.0:
+             _LOGGER.warning("Session flow profile is empty and scale weight is 0, final_weight_grams might be inaccurate.")
+        # Note: self.session_flow_profile might store flow rate, not absolute weight. 
+        # Using self.scale.weight is a placeholder for a more robust way to get final yield if needed.
+
         event_data = {
-            "device_id": self.config_entry.unique_id,  # or other device identifier
-            "entry_id": self.config_entry.entry_id,
-            "start_time_utc": self.session_start_time_utc.isoformat(),
-            "end_time_utc": session_end_time_utc.isoformat(),
-            "duration_seconds": round(duration, 2),
-            "final_weight_grams": final_weight if final_weight is not None else 0.0,
-            "flow_profile_gps": [
-                (round(t, 2), round(f, 2)) for t, f in self.session_flow_profile
-            ],
-            "scale_timer_profile_ms": [
-                (round(t, 2), ms) for t, ms in self.session_scale_timer_profile
-            ],
-            "input_parameters": dict(self.session_input_parameters), # Use a copy
-            "start_trigger": self.session_start_trigger,
+            "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
+            "start_time_utc": original_start_time_utc_iso,
+            "end_time_utc": current_time.isoformat(),
+            "duration_seconds": round(shot_duration, 2),
+            "final_weight_grams": round(final_weight_grams, 2), 
+            "flow_profile": self.session_flow_profile,
+            "scale_timer_profile": self.session_scale_timer_profile,
+            "start_trigger": original_start_trigger,
             "stop_reason": stop_reason,
-            "status": shot_status,
-            # Potentially add brew ratio, average flow rate if calculated here
+            "status": shot_status, 
+            "input_parameters": original_input_params,
         }
-
+        
+        self.last_shot_data = event_data # Store for 'Last Shot' sensors
         self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, event_data)
-        _LOGGER.info("Fired %s event: %s", EVENT_BOOKOO_SHOT_COMPLETED, event_data)
+        # Log event_data without the potentially very long profile lists
+        logged_event_data = {k: v for k, v in event_data.items() if k not in ['flow_profile', 'scale_timer_profile']}
+        _LOGGER.info("Fired EVENT_BOOKOO_SHOT_COMPLETED with data: %s", logged_event_data)
 
-        self.last_shot_data = event_data  # Store for 'Last Shot' sensors
-
-        # Reset session state variables
+        # Reset session variables
         self.is_shot_active = False
         self.session_start_time_utc = None
         self.session_flow_profile = []
         self.session_scale_timer_profile = []
-        self.session_input_parameters = {} # Correctly placed reset
         self.session_start_trigger = None
+        self.session_input_parameters = {} 
 
-        self.async_update_listeners()  # Update binary sensor, last shot sensors, etc.
+        self.async_update_listeners()  # Notify HA about state change

@@ -154,6 +154,14 @@ async def coordinator(mock_hass, mock_config_entry, mock_scale):
             
             yield coord
 
+# Need to import option keys for tests
+from custom_components.bookoo.const import (
+    OPTION_MIN_SHOT_DURATION,
+    OPTION_LINKED_BEAN_WEIGHT_ENTITY,
+    OPTION_LINKED_COFFEE_NAME_ENTITY
+)
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE # For testing states
+
 class TestBookooCoordinator:
     """Test cases for BookooCoordinator."""
 
@@ -171,6 +179,10 @@ class TestBookooCoordinator:
         assert coordinator.session_start_trigger is None
         assert coordinator.last_shot_data == {}
         assert coordinator.name == f"Bookoo {mock_scale.mac}"
+        # Test that options are loaded (default values initially)
+        assert coordinator.min_shot_duration == 10 # Default from __init__ if not in options
+        assert coordinator.linked_bean_weight_entity_id is None
+        assert coordinator.linked_coffee_name_entity_id is None
 
     @pytest.mark.asyncio
     async def test_handle_char_update_auto_start(self, coordinator: BookooCoordinator, mock_hass):
@@ -197,6 +209,143 @@ class TestBookooCoordinator:
             await asyncio.sleep(0)
 
             mock_start_session_method.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_session_populates_linked_inputs(self, coordinator: BookooCoordinator, mock_hass, mock_config_entry):
+        """Test that _start_session populates session_input_parameters from linked entities."""
+        # Simulate configured options
+        mock_config_entry.options = {
+            OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight",
+            OPTION_LINKED_COFFEE_NAME_ENTITY: "input_text.test_coffee_name",
+            OPTION_MIN_SHOT_DURATION: 15 # Example
+        }
+        coordinator._load_options() # Manually reload options as coordinator is already initialized
+
+        # Mock states for linked entities
+        mock_bean_weight_state = MagicMock()
+        mock_bean_weight_state.state = "18.5"
+        mock_coffee_name_state = MagicMock()
+        mock_coffee_name_state.state = "Ethiopia Yirgacheffe"
+
+        def mock_states_get_side_effect(entity_id):
+            if entity_id == "input_number.test_bean_weight":
+                return mock_bean_weight_state
+            if entity_id == "input_text.test_coffee_name":
+                return mock_coffee_name_state
+            return None
+        mock_hass.states.get.side_effect = mock_states_get_side_effect
+
+        await coordinator._start_session(trigger="test_inputs")
+
+        assert coordinator.session_input_parameters.get("bean_weight") == "18.5"
+        assert coordinator.session_input_parameters.get("coffee_name") == "Ethiopia Yirgacheffe"
+
+    @pytest.mark.asyncio
+    async def test_start_session_handles_missing_or_unavailable_linked_inputs(self, coordinator: BookooCoordinator, mock_hass, mock_config_entry):
+        """Test _start_session with missing or unavailable linked entities."""
+        mock_config_entry.options = {
+            OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight_missing", # Will return None from states.get
+            OPTION_LINKED_COFFEE_NAME_ENTITY: "input_text.test_coffee_name_unavailable", # Will return state UNAVAILABLE
+        }
+        coordinator._load_options()
+
+        mock_coffee_unavailable_state = MagicMock()
+        mock_coffee_unavailable_state.state = STATE_UNAVAILABLE
+
+        def mock_states_get_side_effect(entity_id):
+            if entity_id == "input_text.test_coffee_name_unavailable":
+                return mock_coffee_unavailable_state
+            return None # For input_number.test_bean_weight_missing
+        mock_hass.states.get.side_effect = mock_states_get_side_effect
+
+        await coordinator._start_session(trigger="test_missing_inputs")
+
+        assert "bean_weight" not in coordinator.session_input_parameters
+        assert "coffee_name" not in coordinator.session_input_parameters
+
+    @pytest.mark.asyncio
+    @freeze_time("2023-01-01 12:00:00")
+    async def test_stop_session_aborts_if_too_short(self, coordinator: BookooCoordinator, mock_hass, mock_config_entry, caplog):
+        """Test _stop_session aborts logging if shot duration is less than min_shot_duration."""
+        caplog.set_level(logging.INFO, logger="custom_components.bookoo.coordinator")
+        min_duration_config = 15
+        mock_config_entry.options = {
+            OPTION_MIN_SHOT_DURATION: min_duration_config,
+            OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight"
+        }
+        coordinator._load_options()
+        assert coordinator.min_shot_duration == min_duration_config
+
+        # Mock linked entity for input parameters
+        mock_bean_weight_state = MagicMock()
+        mock_bean_weight_state.state = "20.0"
+        mock_hass.states.get.side_effect = lambda entity_id: mock_bean_weight_state if entity_id == "input_number.test_bean_weight" else None
+
+        # Start a session
+        await coordinator._start_session(trigger="test_short_shot_trigger")
+        assert coordinator.is_shot_active
+        expected_input_params = {"bean_weight": "20.0"}
+        assert coordinator.session_input_parameters == expected_input_params
+
+        # Simulate time passing for a short shot (less than min_duration_config)
+        with freeze_time("2023-01-01 12:00:10"): # 10 seconds < 15 seconds
+            await coordinator._stop_session(stop_reason="test_too_short")
+
+        # Assert event was NOT fired for full completion
+        mock_hass.bus.async_fire.assert_not_called() 
+        # Well, it might be called by other things, let's be specific if EVENT_BOOKOO_SHOT_COMPLETED was not fired.
+        # For now, let's check last_shot_data status
+
+        assert not coordinator.is_shot_active
+        assert coordinator.last_shot_data["status"] == "aborted_too_short"
+        assert coordinator.last_shot_data["duration_seconds"] == 10.0
+        assert coordinator.last_shot_data["input_parameters"] == expected_input_params
+        assert "Shot duration (10.00 s) is less than minimum configured (15 s). Aborting full log." in caplog.text
+
+    @pytest.mark.asyncio
+    @freeze_time("2023-01-01 13:00:00")
+    async def test_stop_session_logs_valid_shot_with_inputs(self, coordinator: BookooCoordinator, mock_hass, mock_config_entry, caplog):
+        """Test _stop_session logs a valid shot and includes input_parameters in the event."""
+        caplog.set_level(logging.INFO, logger="custom_components.bookoo.coordinator")
+        min_duration_config = 10
+        mock_config_entry.options = {
+            OPTION_MIN_SHOT_DURATION: min_duration_config,
+            OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight",
+            OPTION_LINKED_COFFEE_NAME_ENTITY: "input_text.test_coffee_name"
+        }
+        coordinator._load_options()
+
+        # Mock linked entities
+        mock_bean_weight_state = MagicMock()
+        mock_bean_weight_state.state = "19.2"
+        mock_coffee_name_state = MagicMock()
+        mock_coffee_name_state.state = "Dark Roast Special"
+        def mock_states_get_side_effect(entity_id):
+            if entity_id == "input_number.test_bean_weight": return mock_bean_weight_state
+            if entity_id == "input_text.test_coffee_name": return mock_coffee_name_state
+            return None
+        mock_hass.states.get.side_effect = mock_states_get_side_effect
+
+        # Start a session
+        await coordinator._start_session(trigger="test_valid_shot_trigger")
+        assert coordinator.is_shot_active
+        expected_input_params = {"bean_weight": "19.2", "coffee_name": "Dark Roast Special"}
+        assert coordinator.session_input_parameters == expected_input_params
+
+        # Simulate time passing for a valid shot
+        with freeze_time("2023-01-01 13:00:25"): # 25 seconds >= 10 seconds
+            await coordinator._stop_session(stop_reason="test_valid_complete")
+
+        assert not coordinator.is_shot_active
+        mock_hass.bus.async_fire.assert_called_once()
+        fired_event_name, fired_event_data = mock_hass.bus.async_fire.call_args[0]
+        
+        assert fired_event_name == EVENT_BOOKOO_SHOT_COMPLETED
+        assert fired_event_data["status"] == "completed"
+        assert fired_event_data["duration_seconds"] == 25.0
+        assert fired_event_data["input_parameters"] == expected_input_params
+        assert coordinator.last_shot_data == fired_event_data
+        assert "Fired EVENT_BOOKOO_SHOT_COMPLETED" in caplog.text
     @pytest.mark.asyncio
     @patch("custom_components.bookoo.coordinator.BookooCoordinator._stop_session", new_callable=AsyncMock)
     async def test_handle_char_update_auto_stop(self, mock_stop_session: AsyncMock, coordinator: BookooCoordinator, mock_hass):
@@ -427,7 +576,7 @@ class TestBookooCoordinator:
         assert coordinator.session_start_trigger == "pytest_trigger"
         
         expected_input_params = {
-            "bean_weight_grams": "18.5",
+            "bean_weight": "18.5", 
             "coffee_name": "Test Coffee"
         }
         assert coordinator.session_input_parameters == expected_input_params
@@ -549,7 +698,7 @@ class TestBookooCoordinator:
             # Check last_shot_data for "aborted_too_short" status
             assert coordinator.last_shot_data["start_time_utc"] == start_time.isoformat()
             assert coordinator.last_shot_data["duration_seconds"] == 3.0
-            assert coordinator.last_shot_data["final_weight_grams"] == 5.0
+            assert coordinator.last_shot_data["final_weight_grams"] == 0.0 # Aborted short shots have 0.0 final weight
             assert coordinator.last_shot_data["status"] == "aborted_too_short"
             assert coordinator.last_shot_data["flow_profile_gps"] == [(1.0, 0.5)] 
             assert coordinator.last_shot_data["scale_timer_profile_ms"] == [(1.0, 1000)]

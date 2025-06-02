@@ -27,16 +27,15 @@ from homeassistant.helpers.selector import (
     EntitySelectorConfig,  # Added
 )
 
-from .const import CONF_IS_VALID_SCALE, DOMAIN
+from .const import (
+    CONF_IS_VALID_SCALE, 
+    DOMAIN,
+    OPTION_MIN_SHOT_DURATION,
+    OPTION_LINKED_BEAN_WEIGHT_ENTITY,
+    OPTION_LINKED_COFFEE_NAME_ENTITY
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-
-# Define constants for option keys to avoid typos
-OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"
-OPTION_LINKED_BEAN_WEIGHT = "linked_bean_weight_entity"
-OPTION_LINKED_COFFEE_NAME = "linked_coffee_name_entity"
-# Add more as needed for other linked inputs
 
 
 class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
@@ -188,52 +187,51 @@ class BookooOptionsFlowHandler(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validation can be added here if needed
-            # For example, check if min_shot_duration is within a reasonable range
-            # if user_input.get(OPTION_MIN_SHOT_DURATION, 5) < 0:
-            #     errors["base"] = "min_shot_duration_negative"
-            #     # Or specifically: errors[OPTION_MIN_SHOT_DURATION] = "value_too_low"
-
+            # Basic validation example (can be expanded)
+            min_duration = user_input.get(OPTION_MIN_SHOT_DURATION, 0)
+            if not isinstance(min_duration, (int, float)) or min_duration < 0:
+                errors[OPTION_MIN_SHOT_DURATION] = "invalid_duration_positive_number_expected"
+            
             if not errors:
-                # self.options.update(user_input) # If storing options in self.options
-                # return self.async_create_entry(title="", data=self.options)
                 return self.async_create_entry(title="", data=user_input)
 
-        # Define the schema for the options form
-        schema = vol.Schema(
+        # Get current options to pre-fill the form
+        current_min_duration = self.config_entry.options.get(OPTION_MIN_SHOT_DURATION, 10) # Default to 10s
+        current_bean_weight_entity = self.config_entry.options.get(OPTION_LINKED_BEAN_WEIGHT_ENTITY)
+        current_coffee_name_entity = self.config_entry.options.get(OPTION_LINKED_COFFEE_NAME_ENTITY)
+
+        options_schema = vol.Schema(
             {
                 vol.Optional(
                     OPTION_MIN_SHOT_DURATION,
-                    default=self.config_entry.options.get(OPTION_MIN_SHOT_DURATION, 5),
+                    default=current_min_duration,
                 ): NumberSelector(
                     NumberSelectorConfig(
-                        min=0, max=60, step=1, mode=NumberSelectorMode.SLIDER
+                        min=0, mode=NumberSelectorMode.BOX, unit_of_measurement="s", step=1
                     )
                 ),
                 vol.Optional(
-                    OPTION_LINKED_BEAN_WEIGHT,
-                    default=self.config_entry.options.get(
-                        OPTION_LINKED_BEAN_WEIGHT, ""
-                    ),
+                    OPTION_LINKED_BEAN_WEIGHT_ENTITY,
+                    default=current_bean_weight_entity if current_bean_weight_entity else vol.UNDEFINED,
                 ): EntitySelector(
                     EntitySelectorConfig(domain="input_number", multiple=False)
                 ),
                 vol.Optional(
-                    OPTION_LINKED_COFFEE_NAME,
-                    default=self.config_entry.options.get(
-                        OPTION_LINKED_COFFEE_NAME, ""
-                    ),
+                    OPTION_LINKED_COFFEE_NAME_ENTITY,
+                    default=current_coffee_name_entity if current_coffee_name_entity else vol.UNDEFINED,
                 ): EntitySelector(
                     EntitySelectorConfig(domain="input_text", multiple=False)
                 ),
-                # Add more EntitySelectors for other parameters as needed
-                # e.g., grind setting (input_number or input_text), roast date (input_datetime), notes (input_text)
             }
         )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=schema,
+            data_schema=options_schema,
             errors=errors,
-            # last_step=True # if this is the only options step
+            description_placeholders={ # Optional: provide descriptions for fields
+                OPTION_MIN_SHOT_DURATION: "Minimum duration for a shot to be considered valid.",
+                OPTION_LINKED_BEAN_WEIGHT_ENTITY: "Select an input_number entity for bean weight.",
+                OPTION_LINKED_COFFEE_NAME_ENTITY: "Select an input_text entity for coffee name/type."
+            }
         )
