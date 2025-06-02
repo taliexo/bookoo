@@ -169,16 +169,18 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         )
 
 
+from homeassistant.config_entries import ConfigEntry, OptionsFlow # Ensure ConfigEntry and OptionsFlow are imported
+# ... (other imports might be here) ...
+
 class BookooOptionsFlowHandler(OptionsFlow):
     """Handle an options flow for Bookoo."""
 
-    def __init__(
-        self, config_entry: ConfigFlowResult
-    ) -> None:  # ConfigEntry is more appropriate
+    def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
-        # Or, more commonly, just store the options directly:
+        # self.config_entry is automatically available from the base class
+        # Or, if you need to manipulate options, you might do:
         # self.options = dict(config_entry.options)
+        # For this fix, we are just removing the deprecated assignment.
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
