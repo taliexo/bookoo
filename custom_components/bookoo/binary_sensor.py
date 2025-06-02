@@ -3,8 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from aiobookoov2.bookooscale import BookooScale
-from .coordinator import BookooCoordinator # Add this import
+from .coordinator import BookooCoordinator  # Add this import
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,

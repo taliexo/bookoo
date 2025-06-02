@@ -21,7 +21,7 @@ repos:
     -   id: mypy
         args:
             - --config-file=mypy.ini
-            - custom_components/bookoo/ # Explicitly target your component
+            # Files to check are passed by pre-commit; no explicit path needed here
             # Consider removing --ignore-missing-imports if mypy.ini handles it sufficiently
             - --python-version=3.12
             - --ignore-missing-imports # Keeping for now, but mypy.ini is preferred source of truth

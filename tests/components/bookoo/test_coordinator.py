@@ -407,10 +407,10 @@ class TestBookooCoordinator:
         coordinator.session_weight_profile = []  # Ensure it's empty before test
         coordinator.session_scale_timer_profile = []  # Ensure it's empty
 
-        # Set the mock scale's properties to what the coordinator should read
-        coordinator.scale.weight = 10.0
-        coordinator.scale.flow_rate = 2.5
-        coordinator.scale.timer = 5.0  # Stored in seconds on BookooScale mock
+        # Set the mock scale's underlying attributes to what the coordinator should read
+        coordinator.scale._weight = 10.0
+        coordinator.scale._flow_rate = 2.5
+        coordinator.scale._timer = 5.0  # Stored in seconds on BookooScale mock
 
         # Data for weight char updates is read from self.scale attributes directly by the coordinator,
         # not from a decode function at this level.

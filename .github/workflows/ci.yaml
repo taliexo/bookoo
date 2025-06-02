@@ -37,7 +37,7 @@ jobs:
 
       - name: Run Ruff Formatter Check
         run: ruff format --check .
-      
+
       - name: Run MyPy Type Checker
         run: mypy --config-file=mypy.ini custom_components/bookoo/
 
