@@ -1,15 +1,5 @@
 version: 2
 updates:
-  # Maintain dependencies for pip (Python)
-  - package-ecosystem: "pip"
-    directory: "/" # Assumes manifest.json (for HA deps) or other dep files are in root context
-    schedule:
-      interval: "daily"
-    target-branch: "main" # Or your primary development branch
-    # For Home Assistant components, pip dependencies are usually in manifest.json
-    # Dependabot might need specific configuration if it doesn't pick up manifest.json requirements automatically.
-    # If it doesn't, you might need to list 'requirements.txt' or 'pyproject.toml' if you add one for dev.
-
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/" # Checks for actions in .github/workflows
