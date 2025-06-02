@@ -180,3 +180,61 @@ automation:
             {{ trigger.event.data.input_parameters.coffee_name | default('') }}
             ({{ trigger.event.data.input_parameters.bean_weight | default('?') }}g beans).
 ```
+
+## Querying Data from InfluxDB
+
+If you are logging your espresso shot data to InfluxDB using the example automation, here are some InfluxQL queries you can use to retrieve and analyze your data. These can be used in tools like Grafana or the InfluxDB Chronograf interface.
+
+**Measurement:** `espresso_shot`
+
+**Tags:**
+*   `device_id`
+*   `coffee_name`
+*   `bean_weight_grams_input`
+*   `start_trigger`
+*   `stop_reason`
+*   `status`
+
+**Fields:**
+*   `duration_seconds`
+*   `final_weight_grams`
+*   `average_flow_rate_gps`
+*   `peak_flow_rate_gps`
+*   `time_to_first_flow_seconds`
+*   `time_to_peak_flow_seconds`
+*   `bean_weight_grams` (field version of the input, converted to float)
+
+### Example InfluxQL Queries
+
+1.  **Get all data for the last 5 completed shots:**
+    ```sql
+    SELECT * FROM "espresso_shot" WHERE "status" = 'completed' ORDER BY time DESC LIMIT 5
+    ```
+
+2.  **Calculate average shot duration and final weight for today:**
+    ```sql
+    SELECT MEAN("duration_seconds") AS "avg_duration", MEAN("final_weight_grams") AS "avg_weight" FROM "espresso_shot" WHERE time >= today() AND "status" = 'completed'
+    ```
+
+3.  **Get all data for shots using a specific coffee (e.g., "Ethiopia Yirgacheffe"):**
+    ```sql
+    SELECT * FROM "espresso_shot" WHERE "coffee_name" = 'Ethiopia Yirgacheffe' AND "status" = 'completed' ORDER BY time DESC
+    ```
+
+4.  **Calculate average flow rate for shots where bean dose was 18g:**
+    ```sql
+    SELECT MEAN("average_flow_rate_gps") AS "avg_flow_rate" FROM "espresso_shot" WHERE "bean_weight_grams_input" = '18.0' AND "status" = 'completed'
+    ```
+    *Note: `bean_weight_grams_input` is a tag and stores the value as a string. If you logged `bean_weight_grams` as a field (float), you could query it as `WHERE "bean_weight_grams" = 18.0`.*
+
+5.  **Count the number of shots per day for the last 7 days:**
+    ```sql
+    SELECT COUNT("duration_seconds") AS "num_shots" FROM "espresso_shot" WHERE time >= now() - 7d AND "status" = 'completed' GROUP BY time(1d) fill(0)
+    ```
+
+6.  **Get shots with an average flow rate greater than 2.0 g/s:**
+    ```sql
+    SELECT * FROM "espresso_shot" WHERE "average_flow_rate_gps" > 2.0 AND "status" = 'completed' ORDER BY time DESC
+    ```
+
+These examples should provide a good starting point for users to explore their logged espresso data.
