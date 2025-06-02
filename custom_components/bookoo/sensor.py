@@ -46,6 +46,7 @@ class BookooDynamicUnitSensorEntityDescription(BookooSensorEntityDescription):
 SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     BookooDynamicUnitSensorEntityDescription(
         key="weight",
+        translation_key="weight",
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.GRAMS,
         state_class=SensorStateClass.MEASUREMENT,
@@ -53,6 +54,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooDynamicUnitSensorEntityDescription(
         key="flow_rate",
+        translation_key="flow_rate",
         device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
         native_unit_of_measurement=UnitOfVolumeFlowRate.MILLILITERS_PER_SECOND,
         suggested_display_precision=1,
@@ -61,6 +63,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooDynamicUnitSensorEntityDescription(
         key="timer",
+        translation_key="timer",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_display_precision=2,
@@ -131,6 +134,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
 RESTORE_SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     BookooSensorEntityDescription(
         key="battery",
+        translation_key="battery",
         device_class=SensorDeviceClass.BATTERY,
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,

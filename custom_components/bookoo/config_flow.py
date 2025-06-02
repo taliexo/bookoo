@@ -150,22 +150,35 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         """Handle confirmation of Bluetooth discovery."""
 
         if user_input is not None:
+            # User has submitted the confirmation form (which now includes the name)
+            # Use the name from user_input if provided, otherwise default to discovered name
+            title = user_input.get(CONF_NAME, self._discovered[CONF_NAME])
             return self.async_create_entry(
-                title=self._discovered[CONF_NAME],
+                title=title,
                 data={
                     CONF_ADDRESS: self._discovered[CONF_ADDRESS],
                     CONF_IS_VALID_SCALE: self._discovered[CONF_IS_VALID_SCALE],
+                    # Optionally store the user-provided name in data if needed elsewhere,
+                    # but title is the primary use.
+                    # CONF_NAME: title 
                 },
             )
 
-        self.context["title_placeholders"] = placeholders = {
-            CONF_NAME: self._discovered[CONF_NAME]
-        }
+        # Show the confirmation form to the user
+        # Pre-fill the name field with the discovered Bluetooth name
+        current_name = self._discovered[CONF_NAME]
+        self.context["title_placeholders"] = {CONF_NAME: current_name} # For description placeholders if any
 
-        self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            description_placeholders=placeholders,
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_NAME, default=current_name): str,
+                }
+            ),
+            description_placeholders={CONF_NAME: current_name}, # Pass current_name for use in translation string
+            # self._set_confirm_only() is usually for forms with no user input fields, just a confirm button.
+            # Since we added a name field, it's a regular form step now.
         )
 
 
