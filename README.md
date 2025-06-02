@@ -60,7 +60,7 @@ This integration provides the following entities:
 ### Sensors
 
 *   **Weight (`sensor.bookoo_weight`):** Current weight on the scale (grams).
-*   **Flow Rate (`sensor.bookoo_flow_rate`):** Current flow rate (mL/second).
+*   **Flow Rate (`sensor.bookoo_flow_rate`):** Current flow rate (g/s).
 *   **Timer (`sensor.bookoo_timer`):** Current reading of the scale's timer (seconds).
 *   **Battery (`sensor.bookoo_battery`):** Battery level of the scale (%).
 *   **NEW - Current Shot Duration (`sensor.bookoo_current_shot_duration`):** Live duration of the currently active espresso shot (seconds). Resets to 0 when no shot is active.
@@ -109,11 +109,11 @@ This integration fires the following event:
         *   `end_time_utc` (string): ISO 8601 formatted UTC timestamp of when the shot ended.
         *   `duration_seconds` (float): Total duration of the shot in seconds (e.g., `28.75`).
         *   `final_weight_grams` (float): Final beverage weight in grams as reported by the scale at the end of the shot (e.g., `36.2`).
-        *   `flow_profile` (list of lists/tuples): Time-series data of the flow rate. Each inner list/tuple is `[elapsed_seconds_since_shot_start, flow_rate_grams_per_second]`. Example: `[[0.5, 0.0], [1.0, 0.5], [1.5, 1.8], ...]` (Note: flow rate unit is typically mL/s, but often approximated as g/s for espresso).
+        *   `flow_profile` (list of lists/tuples): Time-series data of the flow rate. Each inner list/tuple is `[elapsed_seconds_since_shot_start, flow_rate_grams_per_second]`. Example: `[[0.5, 0.0], [1.0, 0.5], [1.5, 1.8], ...]`.
         *   `scale_timer_profile` (list of lists/tuples): Time-series data of the scale's internal timer reading. Each inner list/tuple is `[elapsed_seconds_since_shot_start, scale_timer_reading_milliseconds]`. Example: `[[0.5, 500], [1.0, 1000], ...]`.
         *   `input_parameters` (dictionary): Key-value pairs of data captured from any linked input helper entities at the start of the shot. Keys are `bean_weight` and `coffee_name`. Example: `{"bean_weight": "18.0", "coffee_name": "Ethiopia Yirgacheffe"}`.
         *   `start_trigger` (string): Indicates how the shot was initiated (e.g., `"scale_auto"`, `"ha_service"`).
-        *   `stop_reason` (string): Indicates how the shot was stopped (e.g., `"scale_auto_raw"` (for scale's auto-timer stop), `"ha_service"`, `"disconnected"`).
+        *   `stop_reason` (string): Indicates how the shot was stopped (e.g., `"scale_auto_dict"` (for scale's auto-timer stop via decoded event), `"ha_service"`, `"disconnected"`).
         *   `status` (string): The final status of the shot (e.g., `"completed"`, `"aborted_disconnected"`).
 
 ## Example Automations
