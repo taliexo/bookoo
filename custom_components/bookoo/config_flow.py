@@ -11,7 +11,8 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import callback  # Added for @callback decorator
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
@@ -19,6 +20,11 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    NumberSelector,  # Added
+    NumberSelectorConfig,  # Added
+    NumberSelectorMode,  # Added
+    EntitySelector,  # Added
+    EntitySelectorConfig,  # Added
 )
 
 from .const import CONF_IS_VALID_SCALE, DOMAIN
@@ -26,13 +32,28 @@ from .const import CONF_IS_VALID_SCALE, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class BookooConfigFlow(ConfigFlow, domain=DOMAIN):
+# Define constants for option keys to avoid typos
+OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"
+OPTION_LINKED_BEAN_WEIGHT = "linked_bean_weight_entity"
+OPTION_LINKED_COFFEE_NAME = "linked_coffee_name_entity"
+# Add more as needed for other linked inputs
+
+
+class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for bookoo."""
 
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._discovered: dict[str, Any] = {}
-        self._discovered_devices: dict[str, str] = {}
+        self._discovered_devices: dict[str, str] = {}  # Keep this for user step
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: ConfigFlowResult,  # ConfigEntry is more appropriate here
+    ) -> "BookooOptionsFlowHandler":
+        """Get the options flow for this handler."""
+        return BookooOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -146,4 +167,73 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="bluetooth_confirm",
             description_placeholders=placeholders,
+        )
+
+
+class BookooOptionsFlowHandler(OptionsFlow):
+    """Handle an options flow for Bookoo."""
+
+    def __init__(
+        self, config_entry: ConfigFlowResult
+    ) -> None:  # ConfigEntry is more appropriate
+        """Initialize options flow."""
+        self.config_entry = config_entry
+        # Or, more commonly, just store the options directly:
+        # self.options = dict(config_entry.options)
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Validation can be added here if needed
+            # For example, check if min_shot_duration is within a reasonable range
+            # if user_input.get(OPTION_MIN_SHOT_DURATION, 5) < 0:
+            #     errors["base"] = "min_shot_duration_negative"
+            #     # Or specifically: errors[OPTION_MIN_SHOT_DURATION] = "value_too_low"
+
+            if not errors:
+                # self.options.update(user_input) # If storing options in self.options
+                # return self.async_create_entry(title="", data=self.options)
+                return self.async_create_entry(title="", data=user_input)
+
+        # Define the schema for the options form
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    OPTION_MIN_SHOT_DURATION,
+                    default=self.config_entry.options.get(OPTION_MIN_SHOT_DURATION, 5),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=60, step=1, mode=NumberSelectorMode.SLIDER
+                    )
+                ),
+                vol.Optional(
+                    OPTION_LINKED_BEAN_WEIGHT,
+                    default=self.config_entry.options.get(
+                        OPTION_LINKED_BEAN_WEIGHT, ""
+                    ),
+                ): EntitySelector(
+                    EntitySelectorConfig(domain="input_number", multiple=False)
+                ),
+                vol.Optional(
+                    OPTION_LINKED_COFFEE_NAME,
+                    default=self.config_entry.options.get(
+                        OPTION_LINKED_COFFEE_NAME, ""
+                    ),
+                ): EntitySelector(
+                    EntitySelectorConfig(domain="input_text", multiple=False)
+                ),
+                # Add more EntitySelectors for other parameters as needed
+                # e.g., grind setting (input_number or input_text), roast date (input_datetime), notes (input_text)
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            errors=errors,
+            # last_step=True # if this is the only options step
         )

@@ -3,6 +3,7 @@
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
+from .const import DOMAIN, SERVICE_START_SHOT, SERVICE_STOP_SHOT
 from .coordinator import BookooConfigEntry, BookooCoordinator
 
 PLATFORMS = [
@@ -21,6 +22,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bo
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register services
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_SHOT,
+        coordinator.async_start_shot_service,  # Link to coordinator method
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STOP_SHOT,
+        coordinator.async_stop_shot_service,  # Link to coordinator method
+    )
 
     return True
 

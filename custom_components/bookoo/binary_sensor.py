@@ -32,7 +32,13 @@ BINARY_SENSORS: tuple[BookooBinarySensorEntityDescription, ...] = (
         key="connected",
         translation_key="connected",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
-        is_on_fn=lambda scale: scale.connected,
+        is_on_fn=lambda coordinator: coordinator.scale.connected,  # Changed to use coordinator
+    ),
+    BookooBinarySensorEntityDescription(
+        key="shot_in_progress",
+        translation_key="shot_in_progress",  # Needs entry in strings.json
+        icon="mdi:timer-sand",
+        is_on_fn=lambda coordinator: coordinator.is_shot_active,
     ),
 )
 
@@ -58,4 +64,6 @@ class BookooBinarySensor(BookooEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
-        return self.entity_description.is_on_fn(self._scale)
+        return self.entity_description.is_on_fn(
+            self.coordinator
+        )  # Changed to use coordinator

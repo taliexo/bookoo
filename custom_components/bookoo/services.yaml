@@ -1,0 +1,9 @@
+start_shot:
+  name: Start Espresso Shot
+  description: Starts a new espresso shot session, tares the scale, and starts the timer on the scale.
+  # No fields needed for now, but could add parameters later if required.
+
+stop_shot:
+  name: Stop Espresso Shot
+  description: Stops the current espresso shot session and stops the timer on the scale.
+  # No fields needed for now.

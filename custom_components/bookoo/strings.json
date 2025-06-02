@@ -25,10 +25,26 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Bookoo Scale Espresso Options",
+        "data": {
+          "minimum_shot_duration_seconds": "Minimum Shot Duration (seconds)",
+          "linked_bean_weight_entity": "Bean Weight Input Entity",
+          "linked_coffee_name_entity": "Coffee Name Input Entity"
+        },
+        "description": "Configure parameters for espresso shot logging. Create Input Number and Input Text helpers in Home Assistant for bean weight, coffee name, etc., and link them here."
+      }
+    }
+  },
   "entity": {
     "binary_sensor": {
       "connected": {
         "name": "Connected"
+      },
+      "shot_in_progress": {
+        "name": "Shot in Progress"
       }
     },
     "button": {
@@ -46,6 +62,29 @@
       },
       "tare_and_start": {
         "name": "Tare and start timer"
+      },
+      "start_shot_session": {
+        "name": "Start Espresso Shot"
+      },
+      "stop_shot_session": {
+        "name": "Stop Espresso Shot"
+      }
+    },
+    "sensor": {
+      "current_shot_duration": {
+        "name": "Current Shot Duration"
+      },
+      "last_shot_duration": {
+        "name": "Last Shot Duration"
+      },
+      "last_shot_final_weight": {
+        "name": "Last Shot Final Weight"
+      },
+      "last_shot_start_time": {
+        "name": "Last Shot Start Time"
+      },
+      "last_shot_status": {
+        "name": "Last Shot Status"
       }
     }
   }

@@ -1,6 +1,7 @@
 {
   "domain": "bookoo",
   "name": "Bookoo",
+  "version": "0.2.0",
   "bluetooth": [
     {
       "local_name": "BOOKOO*"
@@ -22,6 +23,5 @@
   "integration_type": "device",
   "iot_class": "local_push",
   "loggers": ["aiobookoo"],
-  "requirements": ["aiobookoo==0.1.0"],
-  "version": "1.0.0"
+  "requirements": ["aiobookoo==0.1.0"]
 }
