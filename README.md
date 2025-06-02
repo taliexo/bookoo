@@ -236,5 +236,3 @@ If you are logging your espresso shot data to InfluxDB using the example automat
     ```sql
     SELECT * FROM "espresso_shot" WHERE "average_flow_rate_gps" > 2.0 AND "status" = 'completed' ORDER BY time DESC
     ```
-
-These examples should provide a good starting point for users to explore their logged espresso data.
