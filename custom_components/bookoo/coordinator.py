@@ -54,7 +54,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"Bookoo {self._scale.address}",
+            name=f"Bookoo {self._scale.mac}",
             update_interval=SCAN_INTERVAL,
             config_entry=entry,
         )
