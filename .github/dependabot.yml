@@ -6,11 +6,6 @@ updates:
     schedule:
       interval: "daily"
     target-branch: "main" # Or your primary development branch
-    reviewers:
-      - "taliexo" # Your GitHub username
-    labels:
-      - "dependencies"
-      - "python"
     # For Home Assistant components, pip dependencies are usually in manifest.json
     # Dependabot might need specific configuration if it doesn't pick up manifest.json requirements automatically.
     # If it doesn't, you might need to list 'requirements.txt' or 'pyproject.toml' if you add one for dev.
@@ -21,8 +16,3 @@ updates:
     schedule:
       interval: "daily"
     target-branch: "main"
-    reviewers:
-      - "taliexo"
-    labels:
-      - "dependencies"
-      - "github_actions"
