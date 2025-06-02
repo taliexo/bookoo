@@ -212,14 +212,14 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_start_session_populates_linked_inputs(self, coordinator: BookooCoordinator, mock_hass, mock_config_entry):
-        """Test that _start_session populates session_input_parameters from linked entities."""
-        # Simulate configured options
+        """Test the _start_session method, including reading linked inputs."""
+        # Setup options for linked entities
         mock_config_entry.options = {
             OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight",
             OPTION_LINKED_COFFEE_NAME_ENTITY: "input_text.test_coffee_name",
-            OPTION_MIN_SHOT_DURATION: 15 # Example
+            OPTION_MIN_SHOT_DURATION: 7 # Example min duration
         }
-        coordinator._load_options() # Manually reload options as coordinator is already initialized
+        coordinator._load_options() # Reload options as coordinator is already initialized
 
         # Mock states for linked entities
         mock_bean_weight_state = MagicMock()
@@ -548,6 +548,7 @@ class TestBookooCoordinator:
             "linked_coffee_name_entity": "input_text.test_coffee_name",
             "non_existent_entity_link": "input_number.non_existent" # Test handling of missing entities
         }
+        coordinator._load_options() # Reload options as coordinator is already initialized
 
         # Mock return values for hass.states.get
         def mock_states_get_side_effect(entity_id):
@@ -611,7 +612,7 @@ class TestBookooCoordinator:
         coordinator.session_start_time_utc = start_time
         coordinator.session_flow_profile = [(1.0, 1.5), (2.0, 2.5)]
         coordinator.session_scale_timer_profile = [(1.0, 1000), (2.0, 2000)]
-        coordinator.session_input_parameters = {"bean_weight_grams": "18.0"}
+        coordinator.session_input_parameters = {"bean_weight": "18.0"} # Corrected key
         coordinator.session_start_trigger = "scale_auto"
         
         mock_scale.weight = 36.0 # Final weight
@@ -633,9 +634,9 @@ class TestBookooCoordinator:
             assert event_data["end_time_utc"] == end_time_actual.isoformat()
             assert event_data["duration_seconds"] == 30.0
             assert event_data["final_weight_grams"] == 36.0
-            assert event_data["flow_profile_gps"] == [(1.0, 1.5), (2.0, 2.5)]
-            assert event_data["scale_timer_profile_ms"] == [(1.0, 1000), (2.0, 2000)]
-            assert event_data["input_parameters"] == {"bean_weight_grams": "18.0"}
+            assert event_data["flow_profile"] == [(1.0, 1.5), (2.0, 2.5)]
+            assert event_data["scale_timer_profile"] == [(1.0, 1000), (2.0, 2000)]
+            assert event_data["input_parameters"] == {"bean_weight": "18.0"} # Corrected key
             assert event_data["start_trigger"] == "scale_auto"
             assert event_data["stop_reason"] == "ha_service"
             assert event_data["status"] == "completed"
@@ -700,8 +701,8 @@ class TestBookooCoordinator:
             assert coordinator.last_shot_data["duration_seconds"] == 3.0
             assert coordinator.last_shot_data["final_weight_grams"] == 0.0 # Aborted short shots have 0.0 final weight
             assert coordinator.last_shot_data["status"] == "aborted_too_short"
-            assert coordinator.last_shot_data["flow_profile_gps"] == [(1.0, 0.5)] 
-            assert coordinator.last_shot_data["scale_timer_profile_ms"] == [(1.0, 1000)]
+            assert coordinator.last_shot_data["flow_profile"] == [] # Aborted short shots have empty profile
+            assert coordinator.last_shot_data["scale_timer_profile"] == [] # Aborted short shots have empty profile
             assert coordinator.last_shot_data["input_parameters"] == {}
 
             mock_update_listeners.assert_called_once()
@@ -751,8 +752,8 @@ class TestBookooCoordinator:
             assert event_data["end_time_utc"] == end_time_actual.isoformat()
             assert event_data["duration_seconds"] == 3.0
             assert event_data["final_weight_grams"] == 2.0
-            assert event_data["flow_profile_gps"] == [(1.0, 0.2)]
-            assert event_data["scale_timer_profile_ms"] == [(1.0, 1000)]
+            assert event_data["flow_profile"] == [(1.0, 0.2)]
+            assert event_data["scale_timer_profile"] == [(1.0, 1000)]
             assert event_data["input_parameters"] == {"info": "test_disconnect"}
             assert event_data["start_trigger"] == "ble_auto"
             assert event_data["stop_reason"] == "disconnected"

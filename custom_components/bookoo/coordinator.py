@@ -352,7 +352,9 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         original_start_trigger = self.session_start_trigger
         original_input_params = dict(self.session_input_parameters) # Make a copy before it's cleared
 
-        if stop_reason not in ["disconnected", "ha_service_stop_forced"] and shot_duration < self.min_shot_duration:
+        if stop_reason == "disconnected":
+            shot_status = "aborted_disconnected"
+        elif stop_reason not in ["ha_service_stop_forced"] and shot_duration < self.min_shot_duration:
             _LOGGER.info(
                 "Shot duration (%.2f s) is less than minimum configured (%s s). Aborting full log.",
                 shot_duration, self.min_shot_duration
@@ -361,6 +363,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             
             self.last_shot_data = {
                 "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
+                "entry_id": self.config_entry.entry_id,
                 "start_time_utc": original_start_time_utc_iso,
                 "end_time_utc": current_time.isoformat(),
                 "duration_seconds": round(shot_duration, 2),
@@ -391,6 +394,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
 
         event_data = {
             "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
+            "entry_id": self.config_entry.entry_id,
             "start_time_utc": original_start_time_utc_iso,
             "end_time_utc": current_time.isoformat(),
             "duration_seconds": round(shot_duration, 2),
