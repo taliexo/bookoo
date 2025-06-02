@@ -21,6 +21,7 @@ from .coordinator import (
     BookooConfigEntry,
     BookooCoordinator,
 )  # Added BookooCoordinator import
+import typing
 from .entity import BookooEntity
 
 # Coordinator is used to centralize the data updates
@@ -176,7 +177,7 @@ class BookooSensor(BookooEntity, SensorEntity):
             and self.entity_description.unit_fn is not None
         ):
             return self.entity_description.unit_fn(self._scale.device_state)
-        return self.entity_description.native_unit_of_measurement
+        return typing.cast(typing.Optional[str], self.entity_description.native_unit_of_measurement)
 
     @property
     def native_value(self) -> int | float | str | None:  # Added str for status

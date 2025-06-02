@@ -1,6 +1,5 @@
 """Tests for the Bookoo coordinator."""
 
-import sys
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -18,8 +17,7 @@ from custom_components.bookoo.const import (
 )
 from aiobookoov2.const import UPDATE_SOURCE_COMMAND_CHAR, UPDATE_SOURCE_WEIGHT_CHAR
 from custom_components.bookoo.coordinator import BookooCoordinator
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, CONF_ADDRESS, CONF_IS_VALID_SCALE
-
+from homeassistant.const import STATE_UNAVAILABLE, CONF_ADDRESS, CONF_IS_VALID_SCALE
 
 
 # Mock homeassistant.util.dt if not using freezegun for all time aspects
@@ -95,11 +93,14 @@ def mock_hass():
 @pytest_asyncio.fixture
 async def coordinator(mock_hass, mock_config_entry, mock_scale):
     """Fixture for a BookooCoordinator instance."""
-    with patch(
-        "custom_components.bookoo.coordinator.BookooScale", return_value=mock_scale
-    ) as _mock_bookoo_scale_init, patch(
-        "custom_components.bookoo.coordinator.dt_util"
-    ) as mock_dt_util_in_fixture:  # Patch dt_util
+    with (
+        patch(
+            "custom_components.bookoo.coordinator.BookooScale", return_value=mock_scale
+        ) as _mock_bookoo_scale_init,
+        patch(
+            "custom_components.bookoo.coordinator.dt_util"
+        ) as mock_dt_util_in_fixture,
+    ):  # Patch dt_util
         # Make the mocked utcnow() respect freezegun
         mock_dt_util_in_fixture.utcnow = lambda: datetime.now(timezone.utc)
         coord = BookooCoordinator(mock_hass, mock_config_entry)
@@ -403,14 +404,14 @@ class TestBookooCoordinator:
             )  # Manually set for test clarity
         coordinator.is_shot_active = True
         coordinator.session_flow_profile = []  # Ensure it's empty before test
-        coordinator.session_weight_profile = [] # Ensure it's empty before test
+        coordinator.session_weight_profile = []  # Ensure it's empty before test
         coordinator.session_scale_timer_profile = []  # Ensure it's empty
 
         # Set the mock scale's properties to what the coordinator should read
         coordinator.scale.weight = 10.0
         coordinator.scale.flow_rate = 2.5
-        coordinator.scale.timer = 5.0 # Stored in seconds on BookooScale mock
-    
+        coordinator.scale.timer = 5.0  # Stored in seconds on BookooScale mock
+
         # Data for weight char updates is read from self.scale attributes directly by the coordinator,
         # not from a decode function at this level.
 
@@ -433,7 +434,10 @@ class TestBookooCoordinator:
                 assert coordinator.session_weight_profile[0] == (5.0, 10.0)
 
                 assert len(coordinator.session_scale_timer_profile) == 1
-                assert coordinator.session_scale_timer_profile[0] == (5.0, 5000) # Timer stored as ms in profile
+                assert coordinator.session_scale_timer_profile[0] == (
+                    5.0,
+                    5000,
+                )  # Timer stored as ms in profile
 
             mock_update_listeners.assert_called_once()
 
@@ -463,7 +467,7 @@ class TestBookooCoordinator:
         self,
         mock_start_session: AsyncMock,
         coordinator: BookooCoordinator,
-        mock_hass, # Ensure mock_hass is included if used by coordinator methods indirectly
+        mock_hass,  # Ensure mock_hass is included if used by coordinator methods indirectly
     ):
         """Test auto-start from command characteristic via decoded event."""
         # Scenario 1: No active shot, correct decoded auto-start event received
@@ -550,7 +554,7 @@ class TestBookooCoordinator:
         # Based on current coordinator logic, if data is None for command char, _stop_session is not called.
         coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, None)
         await asyncio.sleep(0)
-        mock_stop_session.assert_not_called() # mock_stop_session was reset before this scenario
+        mock_stop_session.assert_not_called()  # mock_stop_session was reset before this scenario
 
     @patch(
         "custom_components.bookoo.coordinator.BookooCoordinator.async_update_listeners"

@@ -38,7 +38,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bo
     return True
 
 
+import typing
+
 async def async_unload_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bool:
     """Unload a config entry."""
 
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    return typing.cast(bool, await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
