@@ -68,7 +68,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         value_fn=lambda coordinator: coordinator.scale.timer,
     ),
     # Current Shot Sensor
-    BookooSensorEntityDescription(
+    BookooDynamicUnitSensorEntityDescription(
         key="current_shot_duration",
         translation_key="current_shot_duration",  # Needs strings.json
         device_class=SensorDeviceClass.DURATION,
@@ -82,7 +82,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         ),
     ),
     # Last Shot Sensors
-    BookooSensorEntityDescription(
+    BookooDynamicUnitSensorEntityDescription(
         key="last_shot_duration",
         translation_key="last_shot_duration",  # Needs strings.json
         device_class=SensorDeviceClass.DURATION,
@@ -93,7 +93,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         if coordinator.last_shot_data
         else None,
     ),
-    BookooSensorEntityDescription(
+    BookooDynamicUnitSensorEntityDescription(
         key="last_shot_final_weight",
         translation_key="last_shot_final_weight",  # Needs strings.json
         device_class=SensorDeviceClass.WEIGHT,
@@ -106,7 +106,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         if coordinator.last_shot_data
         else None,
     ),
-    BookooSensorEntityDescription(
+    BookooDynamicUnitSensorEntityDescription(
         key="last_shot_start_time",
         translation_key="last_shot_start_time",  # Needs strings.json
         device_class=SensorDeviceClass.TIMESTAMP,
@@ -118,7 +118,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
             else None
         ),
     ),
-    BookooSensorEntityDescription(
+    BookooDynamicUnitSensorEntityDescription(
         key="last_shot_status",
         translation_key="last_shot_status",  # Needs strings.json
         icon="mdi:list-status",
