@@ -49,3 +49,6 @@ local.*
 # Logs
 logs/
 *.log
+
+*.ruff_cache
+*.mypy_cache
