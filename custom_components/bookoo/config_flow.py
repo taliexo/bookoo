@@ -3,7 +3,11 @@
 import logging
 from typing import Any
 
-from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError, BookooUnknownDevice
+from aiobookoov2.exceptions import (
+    BookooDeviceNotFound,
+    BookooError,
+    BookooUnknownDevice,
+)
 from aiobookoov2.helpers import is_bookoo_scale
 import voluptuous as vol
 
@@ -11,7 +15,12 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import callback  # Added for @callback decorator
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.helpers.device_registry import format_mac
@@ -28,11 +37,11 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
-    CONF_IS_VALID_SCALE, 
+    CONF_IS_VALID_SCALE,
     DOMAIN,
     OPTION_MIN_SHOT_DURATION,
     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
-    OPTION_LINKED_COFFEE_NAME_ENTITY
+    OPTION_LINKED_COFFEE_NAME_ENTITY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -160,14 +169,16 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     CONF_IS_VALID_SCALE: self._discovered[CONF_IS_VALID_SCALE],
                     # Optionally store the user-provided name in data if needed elsewhere,
                     # but title is the primary use.
-                    # CONF_NAME: title 
+                    # CONF_NAME: title
                 },
             )
 
         # Show the confirmation form to the user
         # Pre-fill the name field with the discovered Bluetooth name
         current_name = self._discovered[CONF_NAME]
-        self.context["title_placeholders"] = {CONF_NAME: current_name} # For description placeholders if any
+        self.context["title_placeholders"] = {
+            CONF_NAME: current_name
+        }  # For description placeholders if any
 
         return self.async_show_form(
             step_id="bluetooth_confirm",
@@ -176,14 +187,13 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                     vol.Optional(CONF_NAME, default=current_name): str,
                 }
             ),
-            description_placeholders={CONF_NAME: current_name}, # Pass current_name for use in translation string
+            description_placeholders={
+                CONF_NAME: current_name
+            },  # Pass current_name for use in translation string
             # self._set_confirm_only() is usually for forms with no user input fields, just a confirm button.
             # Since we added a name field, it's a regular form step now.
         )
 
-
-from homeassistant.config_entries import ConfigEntry, OptionsFlow # Ensure ConfigEntry and OptionsFlow are imported
-# ... (other imports might be here) ...
 
 class BookooOptionsFlowHandler(OptionsFlow):
     """Handle an options flow for Bookoo."""
@@ -205,15 +215,23 @@ class BookooOptionsFlowHandler(OptionsFlow):
             # Basic validation example (can be expanded)
             min_duration = user_input.get(OPTION_MIN_SHOT_DURATION, 0)
             if not isinstance(min_duration, (int, float)) or min_duration < 0:
-                errors[OPTION_MIN_SHOT_DURATION] = "invalid_duration_positive_number_expected"
-            
+                errors[OPTION_MIN_SHOT_DURATION] = (
+                    "invalid_duration_positive_number_expected"
+                )
+
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
 
         # Get current options to pre-fill the form
-        current_min_duration = self.config_entry.options.get(OPTION_MIN_SHOT_DURATION, 10) # Default to 10s
-        current_bean_weight_entity = self.config_entry.options.get(OPTION_LINKED_BEAN_WEIGHT_ENTITY)
-        current_coffee_name_entity = self.config_entry.options.get(OPTION_LINKED_COFFEE_NAME_ENTITY)
+        current_min_duration = self.config_entry.options.get(
+            OPTION_MIN_SHOT_DURATION, 10
+        )  # Default to 10s
+        current_bean_weight_entity = self.config_entry.options.get(
+            OPTION_LINKED_BEAN_WEIGHT_ENTITY
+        )
+        current_coffee_name_entity = self.config_entry.options.get(
+            OPTION_LINKED_COFFEE_NAME_ENTITY
+        )
 
         options_schema = vol.Schema(
             {
@@ -222,18 +240,25 @@ class BookooOptionsFlowHandler(OptionsFlow):
                     default=current_min_duration,
                 ): NumberSelector(
                     NumberSelectorConfig(
-                        min=0, mode=NumberSelectorMode.BOX, unit_of_measurement="s", step=1
+                        min=0,
+                        mode=NumberSelectorMode.BOX,
+                        unit_of_measurement="s",
+                        step=1,
                     )
                 ),
                 vol.Optional(
                     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
-                    default=current_bean_weight_entity if current_bean_weight_entity else vol.UNDEFINED,
+                    default=current_bean_weight_entity
+                    if current_bean_weight_entity
+                    else vol.UNDEFINED,
                 ): EntitySelector(
                     EntitySelectorConfig(domain="input_number", multiple=False)
                 ),
                 vol.Optional(
                     OPTION_LINKED_COFFEE_NAME_ENTITY,
-                    default=current_coffee_name_entity if current_coffee_name_entity else vol.UNDEFINED,
+                    default=current_coffee_name_entity
+                    if current_coffee_name_entity
+                    else vol.UNDEFINED,
                 ): EntitySelector(
                     EntitySelectorConfig(domain="input_text", multiple=False)
                 ),
@@ -244,9 +269,9 @@ class BookooOptionsFlowHandler(OptionsFlow):
             step_id="init",
             data_schema=options_schema,
             errors=errors,
-            description_placeholders={ # Optional: provide descriptions for fields
+            description_placeholders={  # Optional: provide descriptions for fields
                 OPTION_MIN_SHOT_DURATION: "Minimum duration for a shot to be considered valid.",
                 OPTION_LINKED_BEAN_WEIGHT_ENTITY: "Select an input_number entity for bean weight.",
-                OPTION_LINKED_COFFEE_NAME_ENTITY: "Select an input_text entity for coffee name/type."
-            }
+                OPTION_LINKED_COFFEE_NAME_ENTITY: "Select an input_text entity for coffee name/type.",
+            },
         )

@@ -43,7 +43,7 @@ To access advanced espresso shot logging features, configure the integration's o
 
 ### Options
 
-*   **Minimum Shot Duration (seconds):** 
+*   **Minimum Shot Duration (seconds):**
     *   Defines the minimum duration (in seconds) for a shot to be considered valid and trigger the `bookoo_shot_completed` event. This helps filter out brief timer activations that aren't actual espresso shots.
     *   Default: 10 seconds (as per current coordinator code). Set to 0 to record all timer events.
 *   **Linked Input Entities:**
@@ -166,8 +166,8 @@ automation:
         data:
           title: "Espresso Shot Completed!"
           message: >
-            Shot duration: {{ trigger.event.data.duration_seconds }}s, 
-            Weight: {{ trigger.event.data.final_weight_grams }}g. 
-            {{ trigger.event.data.input_parameters.coffee_name | default('') }} 
+            Shot duration: {{ trigger.event.data.duration_seconds }}s,
+            Weight: {{ trigger.event.data.final_weight_grams }}g.
+            {{ trigger.event.data.input_parameters.coffee_name | default('') }}
             ({{ trigger.event.data.input_parameters.bean_weight | default('?') }}g beans).
 ```
