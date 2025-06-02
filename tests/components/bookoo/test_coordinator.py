@@ -285,6 +285,103 @@ class TestBookooCoordinator:
             # The check for is_shot_active comes first in _handle_characteristic_update for weight char.
             aiobookoo_decode.assert_not_called()
             mock_update_listeners.assert_not_called()
+
+    # --- Tests for Decoded Command Characteristic Handling ---
+
+    @patch("custom_components.bookoo.coordinator.aiobookoo_decode")
+    @patch("custom_components.bookoo.coordinator.BookooCoordinator._start_session", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_handle_char_update_decoded_auto_start(
+        self, 
+        mock_start_session: AsyncMock, 
+        aiobookoo_decode: MagicMock, # Corrected name
+        coordinator: BookooCoordinator, 
+        mock_hass
+    ):
+        """Test auto-start from command characteristic via decoded event."""
+        auto_start_payload = bytes.fromhex("030d01000000000000000000000000000000000f") # Raw payload, decode mock will override
+        aiobookoo_decode.return_value = {'type': 'auto_timer', 'event': 'start'}
+
+        # Scenario 1: No active shot, decoded auto-start event received
+        coordinator.is_shot_active = False
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_start_payload)
+        await asyncio.sleep(0) 
+        mock_start_session.assert_called_once_with(trigger="scale_auto_decoded")
+
+        # Scenario 2: Shot already active, decoded auto-start event received
+        mock_start_session.reset_mock()
+        coordinator.is_shot_active = True
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_start_payload)
+        await asyncio.sleep(0)
+        mock_start_session.assert_not_called()
+
+        # Scenario 3: Decoded data is not the expected event
+        mock_start_session.reset_mock()
+        coordinator.is_shot_active = False
+        aiobookoo_decode.return_value = {'type': 'other_event', 'event': 'some_value'}
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_start_payload)
+        await asyncio.sleep(0)
+        mock_start_session.assert_not_called() # Should fall through to raw or do nothing
+
+        # Scenario 4: Decoded data is None (simulates aiobookoo_decode not parsing this specific command)
+        mock_start_session.reset_mock()
+        coordinator.is_shot_active = False
+        aiobookoo_decode.return_value = None
+        # This will now test the raw path, ensure it still calls with 'scale_auto_raw'
+        # For this specific test, we are focusing on the DECODED path, so we could skip this
+        # or ensure the raw path is NOT taken if decode provides *some* dict.
+        # The current coordinator logic will try decoded first, then raw if decoded is not a dict.
+        # If decoded is None, it will hit the raw path.
+        with patch.object(coordinator, '_start_session', new_callable=AsyncMock) as mock_start_session_raw_path:
+             coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_start_payload)
+             await asyncio.sleep(0)
+             mock_start_session_raw_path.assert_called_once_with(trigger="scale_auto_raw")
+
+
+    @patch("custom_components.bookoo.coordinator.aiobookoo_decode")
+    @patch("custom_components.bookoo.coordinator.BookooCoordinator._stop_session", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_handle_char_update_decoded_auto_stop(
+        self, 
+        mock_stop_session: AsyncMock, 
+        aiobookoo_decode: MagicMock, # Corrected name
+        coordinator: BookooCoordinator, 
+        mock_hass
+    ):
+        """Test auto-stop from command characteristic via decoded event."""
+        auto_stop_payload = bytes.fromhex("030d00000000000000000000000000000000000e") # Raw payload
+        aiobookoo_decode.return_value = {'type': 'auto_timer', 'event': 'stop'}
+
+        # Scenario 1: Active shot, decoded auto-stop event received
+        coordinator.is_shot_active = True
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_stop_payload)
+        await asyncio.sleep(0)
+        mock_stop_session.assert_called_once_with(stop_reason="scale_auto_stop_decoded")
+
+        # Scenario 2: No active shot, decoded auto-stop event received
+        mock_stop_session.reset_mock()
+        coordinator.is_shot_active = False
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_stop_payload)
+        await asyncio.sleep(0)
+        mock_stop_session.assert_not_called()
+
+        # Scenario 3: Decoded data is not the expected event
+        mock_stop_session.reset_mock()
+        coordinator.is_shot_active = True
+        aiobookoo_decode.return_value = {'type': 'other_event', 'event': 'some_value'}
+        coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_stop_payload)
+        await asyncio.sleep(0)
+        mock_stop_session.assert_not_called()
+
+        # Scenario 4: Decoded data is None (simulates aiobookoo_decode not parsing this specific command)
+        mock_stop_session.reset_mock()
+        coordinator.is_shot_active = True
+        aiobookoo_decode.return_value = None
+        # This will now test the raw path
+        with patch.object(coordinator, '_stop_session', new_callable=AsyncMock) as mock_stop_session_raw_path:
+            coordinator._handle_characteristic_update(UPDATE_SOURCE_COMMAND_CHAR, auto_stop_payload)
+            await asyncio.sleep(0)
+            mock_stop_session_raw_path.assert_called_once_with(stop_reason="scale_auto_stop_raw")
     @patch("custom_components.bookoo.coordinator.BookooCoordinator.async_update_listeners")
     @freeze_time("2023-01-01 12:00:00 UTC")
     @pytest.mark.asyncio

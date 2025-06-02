@@ -85,31 +85,31 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             _LOGGER.debug("[HANDLE_CHAR_DEBUG] decoded_cmd_data: %s (type: %s)", decoded_cmd_data, type(decoded_cmd_data).__name__)
 
             if isinstance(decoded_cmd_data, dict):
-                event = decoded_cmd_data.get("event") # Assuming aiobookoo_decode provides an 'event' key
-                # Example: event could be 'auto_timer_start', 'auto_timer_stop', or other command responses.
+                msg_type = decoded_cmd_data.get("type")
+                event = decoded_cmd_data.get("event")
 
-                if event == "auto_timer_start": # Hypothetical value from aiobookoo_decode
+                if msg_type == "auto_timer" and event == "start":
                     if not self.is_shot_active:
-                        _LOGGER.info("Scale auto-timer (decoded) started shot.")
+                        _LOGGER.info("Scale auto-timer (decoded via type/event) started shot.")
                         self.hass.async_create_task(
                             self._start_session(trigger="scale_auto_decoded")
                         )
                     else:
                         _LOGGER.debug(
-                            "Scale auto-timer start event (decoded) received, but shot already active."
+                            "Scale auto-timer start event (decoded via type/event) received, but shot already active."
                         )
-                elif event == "auto_timer_stop": # Hypothetical value from aiobookoo_decode
+                elif msg_type == "auto_timer" and event == "stop":
                     if self.is_shot_active:
-                        _LOGGER.info("Scale auto-timer (decoded) stopped shot.")
+                        _LOGGER.info("Scale auto-timer (decoded via type/event) stopped shot.")
                         self.hass.async_create_task(
                             self._stop_session(stop_reason="scale_auto_stop_decoded")
                         )
                     else:
                         _LOGGER.debug(
-                            "Scale auto-timer stop event (decoded) received, but no shot active."
+                            "Scale auto-timer stop event (decoded via type/event) received, but no shot active."
                         )
                 else:
-                    _LOGGER.debug("Received other decoded command data: %s", decoded_cmd_data)
+                    _LOGGER.debug("Received other or unrecognized decoded command data structure: %s", decoded_cmd_data)
                     # TODO: Handle other types of command characteristic responses if necessary
             else:
                 _LOGGER.debug("Command char data not decoded into a dict or was None: %s. Raw byte checks might be needed if this is unexpected.", decoded_cmd_data)
