@@ -399,6 +399,10 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                 "input_parameters": original_input_params,
                 "final_weight_grams": 0.0,  # No reliable final weight for aborted short shot
                 "flow_profile": [],  # No profile for aborted short shot
+                "average_flow_rate_gps": 0.0,
+                "peak_flow_rate_gps": 0.0,
+                "time_to_first_flow_seconds": None,
+                "time_to_peak_flow_seconds": None,
                 "scale_timer_profile": [],  # No profile for aborted short shot
             }
             # Reset session variables
@@ -411,14 +415,31 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             self.async_update_listeners()  # Notify HA about state change (shot ended)
             return  # Do not fire full event for aborted short shot
 
-        # For completed shots:
+        # For completed shots (i.e., not aborted as too short):
         final_weight_grams = self.scale.weight if self.scale.weight is not None else 0.0
-        if not self.session_flow_profile and final_weight_grams == 0.0:
-            _LOGGER.warning(
-                "Session flow profile is empty and scale weight is 0, final_weight_grams might be inaccurate."
+
+        # Calculate aggregate metrics
+        average_flow_rate_gps = 0.0
+        if shot_duration > 0 and final_weight_grams > 0:
+            average_flow_rate_gps = round(final_weight_grams / shot_duration, 2)
+
+        peak_flow_rate_gps = 0.0
+        time_to_peak_flow_seconds = None
+        if self.session_flow_profile:
+            peak_flow_tuple = max(
+                self.session_flow_profile, key=lambda item: item[1], default=(None, 0.0)
             )
-        # Note: self.session_flow_profile might store flow rate, not absolute weight.
-        # Using self.scale.weight is a placeholder for a more robust way to get final yield if needed.
+            if peak_flow_tuple[0] is not None:
+                time_to_peak_flow_seconds = round(peak_flow_tuple[0], 2)
+                peak_flow_rate_gps = round(peak_flow_tuple[1], 2)
+
+        time_to_first_flow_seconds = None
+        FIRST_FLOW_THRESHOLD_GPS = 0.2
+        if self.session_flow_profile:
+            for time_elapsed_fp, flow_rate_fp in self.session_flow_profile:
+                if flow_rate_fp > FIRST_FLOW_THRESHOLD_GPS:
+                    time_to_first_flow_seconds = round(time_elapsed_fp, 2)
+                    break
 
         event_data = {
             "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
@@ -429,15 +450,18 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             "final_weight_grams": round(final_weight_grams, 2),
             "flow_profile": self.session_flow_profile,
             "scale_timer_profile": self.session_scale_timer_profile,
+            "input_parameters": original_input_params,
             "start_trigger": original_start_trigger,
             "stop_reason": stop_reason,
             "status": shot_status,
-            "input_parameters": original_input_params,
+            "average_flow_rate_gps": average_flow_rate_gps,
+            "peak_flow_rate_gps": peak_flow_rate_gps,
+            "time_to_first_flow_seconds": time_to_first_flow_seconds,
+            "time_to_peak_flow_seconds": time_to_peak_flow_seconds,
         }
+        self.last_shot_data = event_data.copy()
+        self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, self.last_shot_data)
 
-        self.last_shot_data = event_data  # Store for 'Last Shot' sensors
-        self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, event_data)
-        # Log event_data without the potentially very long profile lists
         logged_event_data = {
             k: v
             for k, v in event_data.items()

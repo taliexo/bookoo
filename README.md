@@ -115,6 +115,10 @@ This integration fires the following event:
         *   `start_trigger` (string): Indicates how the shot was initiated (e.g., `"scale_auto"`, `"ha_service"`).
         *   `stop_reason` (string): Indicates how the shot was stopped (e.g., `"scale_auto_dict"` (for scale's auto-timer stop via decoded event), `"ha_service"`, `"disconnected"`).
         *   `status` (string): The final status of the shot (e.g., `"completed"`, `"aborted_disconnected"`).
+        *   `average_flow_rate_gps` (float): Average flow rate in grams per second for the shot.
+        *   `peak_flow_rate_gps` (float): Peak flow rate in grams per second observed during the shot.
+        *   `time_to_first_flow_seconds` (float | null): Time in seconds from shot start until flow rate first exceeds a small threshold (e.g., 0.2 g/s). Can be `null` if no significant flow is detected.
+        *   `time_to_peak_flow_seconds` (float | null): Time in seconds from shot start when the peak flow rate was achieved. Can be `null` if no flow profile data is available.
 
 ## Example Automations
 
