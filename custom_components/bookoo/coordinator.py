@@ -282,7 +282,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         # This ensures that if the command fails, the HA session still stops.
         try:
             # Assuming aiobookoo has an async_stop_timer method
-            await self.scale.async_send_command("stopTimer")
+            await self.scale.stop_timer()
             _LOGGER.debug("Sent Stop Timer command to scale.")
         except BookooError as e:
             _LOGGER.error("Error sending Stop Timer command to scale: %s", e)
