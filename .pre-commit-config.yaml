@@ -20,12 +20,19 @@ repos:
     hooks:
     -   id: mypy
         args:
+            - --config-file=mypy.ini
+            - custom_components/bookoo/ # Explicitly target your component
+            # Consider removing --ignore-missing-imports if mypy.ini handles it sufficiently
             - --python-version=3.12
-            - --ignore-missing-imports
+            - --ignore-missing-imports # Keeping for now, but mypy.ini is preferred source of truth
             - --follow-imports=silent
             - --show-column-numbers
             - --namespace-packages
             - --explicit-package-bases
             - --install-types
             - --non-interactive
-        additional_dependencies: [types-PyYAML, types-atomicwrites]
+        additional_dependencies:
+          - aiobookoov2==0.3.3 # Match your manifest
+          # - homeassistant-stubs # Example if you use HA stubs
+          - types-PyYAML
+          - types-atomicwrites
