@@ -138,24 +138,28 @@ automation:
           measurement: "espresso_shot"
           tags:
             device_id: "{{ trigger.event.data.device_id }}"
-            coffee_name: "{{ trigger.event.data.input_parameters.coffee_name | default('Unknown') }}"
+            coffee_name: "{{ trigger.event.data.input_parameters.coffee_name | default('Unknown') }}" # Ensure 'coffee_name' is a key you expect
+            bean_weight_grams_input: "{{ trigger.event.data.input_parameters.bean_weight | default(0) }}" # Ensure 'bean_weight' is a key you expect
             start_trigger: "{{ trigger.event.data.start_trigger }}"
             stop_reason: "{{ trigger.event.data.stop_reason }}"
             status: "{{ trigger.event.data.status }}"
           fields:
             duration_seconds: "{{ trigger.event.data.duration_seconds }}"
             final_weight_grams: "{{ trigger.event.data.final_weight_grams }}"
-            bean_weight_grams: "{{ trigger.event.data.input_parameters.bean_weight | float(0) }}"  # Corrected key
-            # For flow_profile and scale_timer_profile, you might need a more complex
-            # script or AppDaemon app to parse and log time-series data effectively if InfluxDB's
-            # direct write service doesn't handle list-of-lists well for fields.
-            # Alternatively, log key metrics like average flow rate if calculated and added to event.
+            # New aggregate metrics:
+            average_flow_rate_gps: "{{ trigger.event.data.average_flow_rate_gps | float(0) }}"
+            peak_flow_rate_gps: "{{ trigger.event.data.peak_flow_rate_gps | float(0) }}"
+            time_to_first_flow_seconds: "{{ trigger.event.data.time_to_first_flow_seconds | float(0) if trigger.event.data.time_to_first_flow_seconds is not none else 0 }}"
+            time_to_peak_flow_seconds: "{{ trigger.event.data.time_to_peak_flow_seconds | float(0) if trigger.event.data.time_to_peak_flow_seconds is not none else 0 }}"
+            # The raw bean_weight from input_parameters might be a string, ensure it's a float for InfluxDB
+            bean_weight_grams: "{{ trigger.event.data.input_parameters.bean_weight | float(0) }}" # Redundant if tagged, but good for fields
+            # Full profiles are still available if needed, but might be large for direct logging
+            # flow_profile_raw: "{{ trigger.event.data.flow_profile }}"
+            # scale_timer_profile_raw: "{{ trigger.event.data.scale_timer_profile }}"
           timestamp: "{{ trigger.event.data.start_time_utc }}" # Use shot start time for the InfluxDB point
 ```
 
-**Note on Time-Series Data:** Logging the full `flow_profile_gps` and `scale_timer_profile_ms` arrays directly into a single InfluxDB field might not be optimal for querying. Consider:
-*   Calculating aggregate metrics (e.g., average flow rate, time to first drip) in the coordinator and adding them to the event payload.
-*   Using a Python script or AppDaemon app triggered by the event to process these arrays and write multiple points to InfluxDB if detailed time-series analysis is required.
+**Note on Time-Series Data:** Key aggregate metrics like average and peak flow rates are now directly available in the event payload. For more detailed analysis of the full `flow_profile` and `scale_timer_profile` arrays, consider using a Python script or AppDaemon app triggered by the event to process these arrays and write multiple points to InfluxDB if needed.
 
 ### 2. Send a Notification on Shot Completion
 
@@ -171,7 +175,8 @@ automation:
           title: "Espresso Shot Completed!"
           message: >
             Shot duration: {{ trigger.event.data.duration_seconds }}s,
-            Weight: {{ trigger.event.data.final_weight_grams }}g.
+            Weight: {{ trigger.event.data.final_weight_grams }}g,
+            Avg Flow: {{ trigger.event.data.average_flow_rate_gps }} g/s.
             {{ trigger.event.data.input_parameters.coffee_name | default('') }}
             ({{ trigger.event.data.input_parameters.bean_weight | default('?') }}g beans).
 ```
