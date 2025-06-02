@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
-from aiobookoo.exceptions import BookooDeviceNotFound, BookooError, BookooUnknownDevice
-from aiobookoo.helpers import is_bookoo_scale
+from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError, BookooUnknownDevice
+from aiobookoov2.helpers import is_bookoo_scale
 import voluptuous as vol
 
 from homeassistant.components.bluetooth import (

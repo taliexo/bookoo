@@ -3,7 +3,7 @@
 from collections.abc import Callable  # noqa: I001
 from dataclasses import dataclass
 
-from aiobookoo.bookooscale import BookooDeviceState
+from aiobookoov2.bookooscale import BookooDeviceState
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,

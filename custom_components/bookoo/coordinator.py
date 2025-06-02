@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any  # For session_input_parameters
 
-from aiobookoo.const import UPDATE_SOURCE_COMMAND_CHAR, UPDATE_SOURCE_WEIGHT_CHAR
-from aiobookoo.decode import (
+from aiobookoov2.const import UPDATE_SOURCE_COMMAND_CHAR, UPDATE_SOURCE_WEIGHT_CHAR
+from aiobookoov2.decode import (
     decode as aiobookoo_decode,
 )  # Alias to avoid name clash if local decode exists
 import logging
 
-from aiobookoo.bookooscale import BookooScale
-from aiobookoo.exceptions import BookooDeviceNotFound, BookooError
+from aiobookoov2.bookooscale import BookooScale
+from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS

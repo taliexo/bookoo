@@ -1,7 +1,7 @@
 {
   "domain": "bookoo",
   "name": "Bookoo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "bluetooth": [
     {
       "local_name": "BOOKOO*"
@@ -16,12 +16,13 @@
       "characteristic_uuid_command": "0000ff12-0000-1000-8000-00805f9b34fb"
     }
   ],
-  "codeowners": ["@makerwolf"],
+  "codeowners": ["@taliexo"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
-  "documentation": "https://www.home-assistant.io/integrations/bookoo",
+  "documentation": "https://github.com/taliexo/bookoo",
+  "issue_tracker": "https://github.com/taliexo/bookoo/issues",
   "integration_type": "device",
   "iot_class": "local_push",
-  "loggers": ["aiobookoo"],
-  "requirements": ["aiobookoo==0.1.0"]
+  "loggers": ["aiobookoov2"],
+  "requirements": ["aiobookoov2==0.2.0"]
 }
