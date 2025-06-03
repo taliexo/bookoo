@@ -7,7 +7,6 @@ import logging
 import pytest_asyncio
 from freezegun import freeze_time
 from datetime import datetime, timezone
-from homeassistant.core import ServiceCall  # Added for mocking
 
 from custom_components.bookoo.const import (
     EVENT_BOOKOO_SHOT_COMPLETED,
@@ -914,7 +913,7 @@ class TestBookooCoordinator:
         mock_hass: MagicMock,
     ):
         """Test the async_start_shot_service method."""
-        mock_call = MagicMock(spec=ServiceCall)
+        mock_call = MagicMock()  # Use a generic mock
         await coordinator.async_start_shot_service(mock_call)
         await asyncio.sleep(0)
 
@@ -937,7 +936,7 @@ class TestBookooCoordinator:
         coordinator.is_shot_active = (
             True  # Ensure shot is active for stop service to proceed
         )
-        mock_call = MagicMock(spec=ServiceCall)
+        mock_call = MagicMock()  # Use a generic mock
         await coordinator.async_stop_shot_service(mock_call)
         await asyncio.sleep(0)
 
