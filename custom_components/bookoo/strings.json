@@ -82,6 +82,18 @@
       }
     },
     "sensor": {
+      "weight": {
+        "name": "Weight"
+      },
+      "flow_rate": {
+        "name": "Flow Rate"
+      },
+      "timer": {
+        "name": "Timer"
+      },
+      "battery": {
+        "name": "Battery"
+      },
       "current_shot_duration": {
         "name": "Current Shot Duration"
       },
