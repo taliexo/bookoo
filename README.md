@@ -191,6 +191,48 @@ automation:
             ({{ trigger.event.data.input_parameters.bean_weight | default('?') }}g beans).
 ```
 
+## Template Sensor Examples
+
+Leverage Home Assistant's template sensors to create customized sensors based on the data provided by the Bookoo integration. Here are a few examples to get you started. You would typically add these to your `configuration.yaml` under the `template:` section, or in a dedicated `templates.yaml` file.
+
+### 1. Shot Quality Assessment (Text)
+
+This sensor provides a human-readable assessment of the current espresso shot's quality based on the `sensor.bookoo_current_shot_quality_score` and `sensor.bookoo_current_shot_channeling_status`.
+
+```yaml
+template:
+  - sensor:
+      - name: "Bookoo Shot Quality Assessment"
+        unique_id: bookoo_shot_quality_assessment
+        icon: mdi:coffee-check-outline
+        state: >
+          {% set score = states('sensor.bookoo_current_shot_quality_score') | float(0) %}
+          {% set channeling = states('sensor.bookoo_current_shot_channeling_status') %}
+          {% set is_shot_active = is_state('binary_sensor.bookoo_shot_in_progress', 'on') %}
+
+          {% if not is_shot_active %}
+            Idle
+          {% elif score >= 90 and channeling == 'No Channeling' %}
+            Excellent! ({{ score | round(0) }}%)
+          {% elif score >= 80 and (channeling == 'No Channeling' or channeling == 'Mild Channeling') %}
+            Great Shot ({{ score | round(0) }}%){% if channeling == 'Mild Channeling' %} - Mild Channeling{% endif %}
+          {% elif score >= 70 %}
+            Good Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - {{ channeling }}{% endif %}
+          {% elif score >= 50 %}
+            Fair Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - {{ channeling }}. Consider grind/tamp.{% else %} - Consider grind/tamp.{% endif %}
+          {% elif score > 0 %}
+            Poor Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - Significant {{ channeling }}. Check puck prep.{% else %} - Check puck prep.{% endif %}
+          {% else %}
+            Awaiting Data
+          {% endif %}
+        attributes:
+          quality_score: "{{ states('sensor.bookoo_current_shot_quality_score') | float(None) }}"
+          channeling_status: "{{ states('sensor.bookoo_current_shot_channeling_status') }}"
+          shot_active: "{{ is_state('binary_sensor.bookoo_shot_in_progress', 'on') }}"
+```
+
+*(More template sensor examples can be added here.)*
+
 ## Querying Data from InfluxDB
 
 If you are logging your espresso shot data to InfluxDB (e.g., via MQTT and Telegraf as described above), here are some InfluxQL queries you can use. These assume your Telegraf (or other consumer) configuration results in a measurement named `espresso_shot` with tags and fields derived from the JSON payload.
