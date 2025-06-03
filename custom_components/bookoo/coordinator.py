@@ -86,7 +86,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.realtime_shot_quality_score: float | None = 0.0
 
         # Load options
-        self.min_shot_duration: int = 10  # Default
+        self.min_duration_seconds: int = 10  # Default
         self.linked_bean_weight_entity_id: str | None = None
         self.linked_coffee_name_entity_id: str | None = None
         self._load_options()  # Load initial options
@@ -103,7 +103,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
 
     def _load_options(self) -> None:
         """Load options from the config entry."""
-        self.min_shot_duration = self.config_entry.options.get(
+        self.min_duration_seconds = self.config_entry.options.get(
             OPTION_MIN_SHOT_DURATION, 10
         )
         self.linked_bean_weight_entity_id = self.config_entry.options.get(
@@ -115,7 +115,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         _LOGGER.debug(
             "Loaded options. Min Duration: %s, Bean Weight Entity: %s, "
             "Coffee Name Entity: %s",
-            self.min_shot_duration,
+            self.min_duration_seconds,
             self.linked_bean_weight_entity_id,
             self.linked_coffee_name_entity_id,
         )
@@ -455,29 +455,35 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             )
             return
 
+        # Capture start time immediately after the guard
+        current_session_start_time_utc = self.session_start_time_utc
+
         current_time = dt_util.utcnow()
-        shot_duration = (current_time - self.session_start_time_utc).total_seconds()
+        # Calculate duration
+        duration_seconds = (
+            current_time - current_session_start_time_utc
+        ).total_seconds()
         _LOGGER.info(
             "Stopping shot session (reason: %s). Duration: %.2f seconds.",
             stop_reason,
-            shot_duration,
+            duration_seconds,
         )
 
         shot_status = "completed"  # Default status
-        original_start_time_utc_iso = self.session_start_time_utc.isoformat()
         original_start_trigger = self.session_start_trigger
         original_input_params = dict(self.session_input_parameters)
+        original_start_time_utc_iso = current_session_start_time_utc.isoformat()
 
         if stop_reason == "disconnected":
             shot_status = "aborted_disconnected"
         elif (
             stop_reason not in ["ha_service_stop_forced"]  # Allow forced logging
-            and shot_duration < self.min_shot_duration
+            and duration_seconds < self.min_duration_seconds
         ):
             _LOGGER.info(
                 "Shot duration (%.2f s) < min configured (%s s). Aborting, saving minimal.",
-                shot_duration,
-                self.min_shot_duration,
+                duration_seconds,
+                self.min_duration_seconds,
             )
             shot_status = "aborted_too_short"
 
@@ -486,7 +492,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                 "entry_id": self.config_entry.entry_id,
                 "start_time_utc": original_start_time_utc_iso,
                 "end_time_utc": current_time.isoformat(),
-                "duration_seconds": round(shot_duration, 2),
+                "duration_seconds": round(duration_seconds, 2),
                 "status": shot_status,
                 "start_trigger": original_start_trigger,
                 "stop_reason": stop_reason,
@@ -530,8 +536,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         final_weight_grams = self.scale.weight if self.scale.weight is not None else 0.0
 
         average_flow_rate_gps = 0.0
-        if shot_duration > 0 and final_weight_grams > 0:  # Avoid division by zero
-            average_flow_rate_gps = round(final_weight_grams / shot_duration, 2)
+        if duration_seconds > 0 and final_weight_grams > 0:  # Avoid division by zero
+            average_flow_rate_gps = round(final_weight_grams / duration_seconds, 2)
 
         peak_flow_rate_gps = 0.0
         time_to_peak_flow_seconds = None
@@ -562,7 +568,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             "entry_id": self.config_entry.entry_id,
             "start_time_utc": original_start_time_utc_iso,
             "end_time_utc": current_time.isoformat(),
-            "duration_seconds": round(shot_duration, 2),
+            "duration_seconds": round(duration_seconds, 2),
             "final_weight_grams": round(final_weight_grams, 2),
             "flow_profile": self.session_flow_profile,
             "scale_timer_profile": self.session_scale_timer_profile,

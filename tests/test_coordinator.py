@@ -191,7 +191,7 @@ class TestBookooCoordinator:
         assert coordinator.name == f"Bookoo {mock_scale.mac}"
         # Test that options are loaded (default values initially)
         assert (
-            coordinator.min_shot_duration == 10
+            coordinator.min_duration_seconds == 10
         )  # Default from __init__ if not in options
         assert coordinator.linked_bean_weight_entity_id is None
         assert coordinator.linked_coffee_name_entity_id is None
@@ -307,7 +307,7 @@ class TestBookooCoordinator:
             OPTION_LINKED_BEAN_WEIGHT_ENTITY: "input_number.test_bean_weight",
         }
         coordinator._load_options()
-        assert coordinator.min_shot_duration == min_duration_config
+        assert coordinator.min_duration_seconds == min_duration_config
 
         # Mock linked entity for input parameters
         mock_bean_weight_state = MagicMock()

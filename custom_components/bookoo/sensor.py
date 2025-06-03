@@ -22,8 +22,10 @@ from .coordinator import (
     BookooConfigEntry,
     BookooCoordinator,
 )  # Added BookooCoordinator import
-import typing
 from .entity import BookooEntity
+
+# Import typing for casts and Optional if not already present from other stdlib imports
+import typing
 
 # Coordinator is used to centralize the data updates
 PARALLEL_UPDATES = 0
@@ -205,19 +207,30 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BookooSensor(BookooEntity, SensorEntity):
+class BookooSensor(SensorEntity, BookooEntity):
     """Representation of an Bookoo sensor."""
 
-    entity_description: BookooDynamicUnitSensorEntityDescription
+    entity_description: BookooSensorEntityDescription
 
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return the unit of measurement of this entity."""
         if (
             self.coordinator.scale.device_state is not None
+            and hasattr(self.entity_description, "unit_fn")
+            and isinstance(
+                self.entity_description, BookooDynamicUnitSensorEntityDescription
+            )
             and self.entity_description.unit_fn is not None
         ):
+            # Now we are sure it's BookooDynamicUnitSensorEntityDescription and unit_fn is not None (due to the isinstance and not None check)
+            # The hasattr is a bit redundant if isinstance is used, but safe.
             return self.entity_description.unit_fn(self.coordinator.scale.device_state)
+
+        # Otherwise, defer to the native_unit_of_measurement from the entity_description.
+        # This covers cases where entity_description is BookooSensorEntityDescription (no unit_fn)
+        # or BookooDynamicUnitSensorEntityDescription but unit_fn is None.
+        # Explicitly cast the type for mypy
         return typing.cast(
             typing.Optional[str], self.entity_description.native_unit_of_measurement
         )

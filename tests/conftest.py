@@ -1,5 +1,11 @@
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
+
+# Add project root to sys.path to allow imports like 'custom_components.bookoo'
+project_root = Path(__file__).parent.parent  # Go up one level from 'tests' dir
+sys.path.insert(0, str(project_root))
+
 
 # --- Start Mocks for Home Assistant ---
 mock_hass_const = MagicMock()
@@ -11,37 +17,6 @@ mock_hass_const.STATE_UNAVAILABLE = "unavailable"
 mock_hass_const.STATE_UNKNOWN = "unknown"
 
 mock_hass_core = MagicMock()
-
-
-class MockDataUpdateCoordinator:
-    def __init__(self, hass, logger, *, name, update_interval, config_entry=None):
-        self.hass = hass
-        self.logger = logger
-        self.name = name
-        self.update_interval = update_interval
-        self.config_entry = config_entry
-        self.data = None
-        self._listeners = []
-
-    async def _async_update_data(self):
-        pass
-
-    def async_add_listener(self, update_callback, context=None):
-        pass
-
-    def async_update_listeners(self):
-        pass
-
-    @classmethod
-    def __class_getitem__(cls, item):
-        return cls
-
-
-mock_hass_helpers_update_coordinator = MagicMock()
-mock_hass_helpers_update_coordinator.DataUpdateCoordinator = MockDataUpdateCoordinator
-mock_hass_helpers_update_coordinator.UpdateFailed = type(
-    "UpdateFailed", (Exception,), {}
-)
 
 
 class MockConfigEntry:
@@ -60,9 +35,6 @@ mock_util.dt = mock_dt_util
 
 sys.modules["homeassistant.const"] = mock_hass_const
 sys.modules["homeassistant.core"] = mock_hass_core
-sys.modules["homeassistant.helpers.update_coordinator"] = (
-    mock_hass_helpers_update_coordinator
-)
 sys.modules["homeassistant.config_entries"] = mock_hass_config_entries
 sys.modules["homeassistant.util"] = mock_util
 sys.modules["homeassistant.util.dt"] = mock_dt_util
