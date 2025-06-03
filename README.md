@@ -68,11 +68,16 @@ This integration provides the following entities:
 *   **NEW - Last Shot Final Weight (`sensor.bookoo_last_shot_final_weight`):** Final beverage weight of the last completed shot (grams).
 *   **NEW - Last Shot Start Time (`sensor.bookoo_last_shot_start_time`):** UTC timestamp when the last shot started.
 *   **NEW - Last Shot Status (`sensor.bookoo_last_shot_status`):** Status of the last shot (e.g., "completed", "aborted_disconnected", "aborted_too_short").
+*   **NEW - Current Shot Channeling Status (`sensor.bookoo_current_shot_channeling_status`):** Real-time assessment of channeling during an active shot (e.g., "None", "Mild Channeling", "Moderate Channeling"). Updates live.
+*   **NEW - Current Shot Pre-infusion Duration (`sensor.bookoo_current_shot_pre_infusion_duration`):** Duration of the detected pre-infusion phase in seconds during an active shot. Updates live.
+*   **NEW - Current Shot Extraction Uniformity (`sensor.bookoo_current_shot_extraction_uniformity`):** A metric (typically 0-1) indicating the uniformity of the extraction based on flow rate analysis during an active shot. Updates live.
+*   **NEW - Current Shot Quality Score (`sensor.bookoo_current_shot_quality_score`):** A unified score (0-100%) representing the overall quality of the ongoing shot, derived from uniformity and channeling status. Updates live.
 
 ### Binary Sensors
 
 *   **Connected (`binary_sensor.bookoo_connected`):** Indicates if Home Assistant is currently connected to the scale.
 *   **NEW - Shot in Progress (`binary_sensor.bookoo_shot_in_progress`):** Indicates if an espresso shot session is currently active.
+*   **NEW - Current Shot Pre-infusion Active (`binary_sensor.bookoo_current_shot_pre_infusion_active`):** Indicates if the pre-infusion phase is currently active during a shot. Updates live.
 
 ### Buttons
 

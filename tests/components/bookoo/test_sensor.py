@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry  # type: ignore[import-untyped]
 
 from custom_components.bookoo.const import DOMAIN
 from custom_components.bookoo.coordinator import BookooCoordinator
