@@ -13,6 +13,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import BookooConfigEntry  # Ensure BookooCoordinator is imported
 from .entity import BookooEntity
+from .const import (
+    DOMAIN,
+    SERVICE_START_SHOT,
+    SERVICE_STOP_SHOT,
+)  # Added for service calls
 
 PARALLEL_UPDATES = 0
 
@@ -21,9 +26,9 @@ PARALLEL_UPDATES = 0
 class BookooButtonEntityDescription(ButtonEntityDescription):
     """Description for bookoo button entities."""
 
-    press_fn: Callable[
-        [BookooCoordinator], Coroutine[Any, Any, None]
-    ]  # Changed to BookooCoordinator
+    press_fn: Callable[[BookooCoordinator], Coroutine[Any, Any, None]] | None = (
+        None  # Made optional
+    )
 
 
 BUTTONS: tuple[BookooButtonEntityDescription, ...] = (
@@ -61,13 +66,15 @@ BUTTONS: tuple[BookooButtonEntityDescription, ...] = (
         key="start_shot_session",
         translation_key="start_shot_session",  # Needs entry in strings.json
         icon="mdi:play-circle-outline",
-        press_fn=lambda coordinator: coordinator.async_start_shot_service(),
+        # press_fn is now handled by key in async_press
+        # press_fn=lambda coordinator: coordinator.async_start_shot_service(), # This call is no longer direct
     ),
     BookooButtonEntityDescription(
         key="stop_shot_session",
         translation_key="stop_shot_session",  # Needs entry in strings.json
         icon="mdi:stop-circle-outline",
-        press_fn=lambda coordinator: coordinator.async_stop_shot_service(),
+        # press_fn is now handled by key in async_press
+        # press_fn=lambda coordinator: coordinator.async_stop_shot_service(), # This call is no longer direct
     ),
 )
 
@@ -92,6 +99,20 @@ class BookooButton(BookooEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
-        await self.entity_description.press_fn(
-            self.coordinator
-        )  # Changed to use self.coordinator
+        if self.entity_description.key == "start_shot_session":
+            await self.hass.services.async_call(
+                DOMAIN, SERVICE_START_SHOT, blocking=True
+            )
+        elif self.entity_description.key == "stop_shot_session":
+            await self.hass.services.async_call(
+                DOMAIN, SERVICE_STOP_SHOT, blocking=True
+            )
+        elif (
+            hasattr(self.entity_description, "press_fn")
+            and self.entity_description.press_fn
+        ):
+            await self.entity_description.press_fn(self.coordinator)
+        else:
+            # Fallback or error if no press_fn and not a special handled key
+            # This case should ideally not be reached if BUTTONS tuple is correctly defined
+            pass

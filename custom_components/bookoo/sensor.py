@@ -2,6 +2,7 @@
 
 from collections.abc import Callable  # noqa: I001
 from dataclasses import dataclass
+from datetime import datetime  # Added for type hint
 
 from aiobookoov2.bookooscale import BookooDeviceState
 from homeassistant.components.sensor import (
@@ -33,8 +34,8 @@ class BookooSensorEntityDescription(SensorEntityDescription):
     """Description for Bookoo sensor entities."""
 
     value_fn: Callable[
-        [BookooCoordinator], int | float | str | None
-    ]  # Changed BookooScale to BookooCoordinator, added str for status
+        [BookooCoordinator], int | float | str | datetime | None
+    ]  # Added datetime for timestamp sensors
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -159,6 +160,17 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
             else None
         ),  # Convert 0.0-1.0 to 0-100 for HA percentage
     ),
+    BookooSensorEntityDescription(
+        key="current_shot_quality_score",
+        translation_key="current_shot_quality_score",  # Needs strings.json
+        native_unit_of_measurement=PERCENTAGE,
+        icon="mdi:chart-gantt",  # Or mdi:gauge, mdi:speedometer
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda coordinator: round(coordinator.realtime_shot_quality_score, 1)
+        if coordinator.realtime_shot_quality_score is not None
+        else None,
+    ),
 )
 
 RESTORE_SENSORS: tuple[BookooSensorEntityDescription, ...] = (
@@ -202,16 +214,18 @@ class BookooSensor(BookooEntity, SensorEntity):
     def native_unit_of_measurement(self) -> str | None:
         """Return the unit of measurement of this entity."""
         if (
-            self._scale.device_state is not None
+            self.coordinator.scale.device_state is not None
             and self.entity_description.unit_fn is not None
         ):
-            return self.entity_description.unit_fn(self._scale.device_state)
+            return self.entity_description.unit_fn(self.coordinator.scale.device_state)
         return typing.cast(
             typing.Optional[str], self.entity_description.native_unit_of_measurement
         )
 
     @property
-    def native_value(self) -> int | float | str | None:  # Added str for status
+    def native_value(
+        self,
+    ) -> int | float | str | datetime | None:  # Added datetime for timestamp sensors
         """Return the state of the entity."""
         return self.entity_description.value_fn(self.coordinator)  # Pass coordinator
 

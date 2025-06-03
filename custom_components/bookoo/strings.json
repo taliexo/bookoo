@@ -105,6 +105,9 @@
       },
       "current_shot_extraction_uniformity": {
         "name": "Current Shot Extraction Uniformity"
+      },
+      "current_shot_quality_score": {
+        "name": "Current Shot Quality Score"
       }
     }
   }

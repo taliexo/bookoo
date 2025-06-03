@@ -58,7 +58,7 @@ class BookooConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigFlowResult,  # ConfigEntry is more appropriate here
+        config_entry: ConfigEntry,
     ) -> "BookooOptionsFlowHandler":
         """Get the options flow for this handler."""
         return BookooOptionsFlowHandler(config_entry)

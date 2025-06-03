@@ -7,6 +7,7 @@ import logging
 import pytest_asyncio
 from freezegun import freeze_time
 from datetime import datetime, timezone
+from homeassistant.core import ServiceCall  # Added for mocking
 
 from custom_components.bookoo.const import (
     EVENT_BOOKOO_SHOT_COMPLETED,
@@ -120,6 +121,58 @@ async def coordinator(mock_hass, mock_config_entry, mock_scale):
 
 class TestBookooCoordinator:
     """Test cases for BookooCoordinator."""
+
+    @pytest.mark.parametrize(
+        "uniformity, channeling_status, expected_score",
+        [
+            # Perfect score
+            (1.0, "None", 100.0),
+            (1.0, "Undetermined", 100.0),
+            # Uniformity impacts score directly
+            (0.8, "None", 80.0),
+            (0.5, "None", 50.0),
+            (0.0, "None", 0.0),
+            # Channeling penalties
+            (1.0, "Mild Channeling (High Variation)", 85.0),  # 100 - 15
+            (1.0, "Suspected Channeling (Spike)", 80.0),  # 100 - 20
+            (
+                1.0,
+                "Mild-Moderate Channeling (Variation & Notable Peak)",
+                75.0,
+            ),  # 100 - 25
+            (1.0, "Moderate Channeling (High Variation & Spike)", 70.0),  # 100 - 30
+            # Combined: good uniformity, some channeling
+            (0.8, "Mild Channeling (High Variation)", 65.0),  # 80 - 15
+            # Combined: poor uniformity, some channeling (should cap at 0)
+            (
+                0.1,
+                "Moderate Channeling (High Variation & Spike)",
+                0.0,
+            ),  # 10 - 30 -> -20, capped at 0
+            (0.3, "Moderate Channeling (High Variation & Spike)", 0.0),  # 30 - 30 = 0
+            # Uniformity is None
+            (None, "None", 0.0),
+            (
+                None,
+                "Mild Channeling (High Variation)",
+                0.0,
+            ),  # Penalty doesn't matter if base is 0 due to None
+        ],
+    )
+    def test_update_shot_quality_score(
+        self,
+        coordinator: BookooCoordinator,
+        uniformity: float | None,
+        channeling_status: str,
+        expected_score: float,
+    ):
+        """Test the _update_shot_quality_score method with various inputs."""
+        coordinator.realtime_extraction_uniformity = uniformity
+        coordinator.realtime_channeling_status = channeling_status
+
+        coordinator._update_shot_quality_score()
+
+        assert coordinator.realtime_shot_quality_score == expected_score
 
     @pytest.mark.asyncio
     async def test_coordinator_initialization(
@@ -861,7 +914,8 @@ class TestBookooCoordinator:
         mock_hass: MagicMock,
     ):
         """Test the async_start_shot_service method."""
-        await coordinator.async_start_shot_service()
+        mock_call = MagicMock(spec=ServiceCall)
+        await coordinator.async_start_shot_service(mock_call)
         await asyncio.sleep(0)
 
         mock_start_session.assert_called_once_with(trigger="ha_service")
@@ -883,7 +937,8 @@ class TestBookooCoordinator:
         coordinator.is_shot_active = (
             True  # Ensure shot is active for stop service to proceed
         )
-        await coordinator.async_stop_shot_service()
+        mock_call = MagicMock(spec=ServiceCall)
+        await coordinator.async_stop_shot_service(mock_call)
         await asyncio.sleep(0)
 
         mock_stop_session.assert_called_once_with(stop_reason="ha_service")

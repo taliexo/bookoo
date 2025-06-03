@@ -19,7 +19,7 @@ from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -80,7 +80,10 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.realtime_channeling_status: str = "Undetermined"
         self.realtime_pre_infusion_active: bool = False
         self.realtime_pre_infusion_duration: float | None = None
-        self.realtime_extraction_uniformity: float = 0.0
+        self.realtime_extraction_uniformity: float | None = (
+            0.0  # Can be None initially or if not calculable
+        )
+        self.realtime_shot_quality_score: float | None = 0.0
 
         # Load options
         self.min_shot_duration: int = 10  # Default
@@ -266,10 +269,46 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                         self.realtime_pre_infusion_duration,
                         self.realtime_extraction_uniformity,
                     )
+                    self._update_shot_quality_score()  # Calculate quality score
 
             self.async_update_listeners()  # Notify HA entities to update
         else:
             _LOGGER.warning("Unknown characteristic update source: %s", source)
+
+    def _update_shot_quality_score(self) -> None:
+        """Calculate the real-time shot quality score."""
+        if self.realtime_extraction_uniformity is None:
+            self.realtime_shot_quality_score = (
+                0.0  # Or some other default if uniformity is unknown
+            )
+            return
+
+        # Base score from uniformity (0-100)
+        quality_score = self.realtime_extraction_uniformity * 100.0
+
+        # Penalties for channeling
+        channeling_penalty = 0
+        if self.realtime_channeling_status == "Mild Channeling (High Variation)":
+            channeling_penalty = 15
+        elif self.realtime_channeling_status == "Suspected Channeling (Spike)":
+            channeling_penalty = 20
+        elif (
+            self.realtime_channeling_status
+            == "Mild-Moderate Channeling (Variation & Notable Peak)"
+        ):
+            channeling_penalty = 25
+        elif (
+            self.realtime_channeling_status
+            == "Moderate Channeling (High Variation & Spike)"
+        ):
+            channeling_penalty = 30
+        # No penalty for "None" or "Undetermined"
+
+        quality_score -= channeling_penalty
+        self.realtime_shot_quality_score = max(0, min(100, quality_score))
+        _LOGGER.debug(
+            "Updated shot quality score: %.1f", self.realtime_shot_quality_score
+        )
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
@@ -309,7 +348,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             )
 
     # Service call handlers
-    async def async_start_shot_service(self) -> None:
+    async def async_start_shot_service(self, call: ServiceCall) -> None:
         """Service call to start a new shot session via HA."""
         if self.is_shot_active:
             _LOGGER.warning("Start shot service called, but a shot is already active.")
@@ -326,7 +365,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             # Optionally, stop the session if command fails, or let it run without scale sync
             # await self._stop_session(stop_reason="command_failed_start")
 
-    async def async_stop_shot_service(self) -> None:
+    async def async_stop_shot_service(self, call: ServiceCall) -> None:
         """Service call to stop the current shot session via HA."""
         if not self.is_shot_active:
             _LOGGER.warning("Stop shot service called, but no shot is active.")
@@ -365,7 +404,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.realtime_channeling_status = "Undetermined"
         self.realtime_pre_infusion_active = False
         self.realtime_pre_infusion_duration = None
-        self.realtime_extraction_uniformity = 0.0
+        self.realtime_extraction_uniformity = 0.0  # Default to 0.0, can be None
+        self.realtime_shot_quality_score = 0.0  # Default to 0.0, can be None
         _LOGGER.debug("Real-time analytics reset for new shot session.")
 
         # Read linked input_number/input_text entities
@@ -462,6 +502,9 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                 "pre_infusion_detected": self.realtime_pre_infusion_active,
                 "pre_infusion_duration_seconds": (self.realtime_pre_infusion_duration),
                 "extraction_uniformity_metric": self.realtime_extraction_uniformity,
+                "shot_quality_score": round(self.realtime_shot_quality_score, 1)
+                if self.realtime_shot_quality_score is not None
+                else None,
             }
             self.last_shot_data = event_data.copy()
 
@@ -526,19 +569,21 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             "input_parameters": original_input_params,
             "start_trigger": original_start_trigger,
             "stop_reason": stop_reason,
-            "status": shot_status,
-            # This will be 'completed' or 'aborted_disconnected'
+            "status": shot_status,  # This will be 'completed' or 'aborted_disconnected'
             # Real-time analytics results
             "channeling_status": self.realtime_channeling_status,
             "pre_infusion_detected": self.realtime_pre_infusion_active,
             "pre_infusion_duration_seconds": self.realtime_pre_infusion_duration,
             "extraction_uniformity_metric": self.realtime_extraction_uniformity,
+            # Other calculated metrics
             "average_flow_rate_gps": average_flow_rate_gps,
             "peak_flow_rate_gps": peak_flow_rate_gps,
             "time_to_first_flow_seconds": time_to_first_flow_seconds,
             "time_to_peak_flow_seconds": time_to_peak_flow_seconds,
+            "shot_quality_score": round(self.realtime_shot_quality_score, 1)
+            if self.realtime_shot_quality_score is not None
+            else None,
         }
-
         self.last_shot_data = event_data.copy()
         self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, self.last_shot_data)
 
