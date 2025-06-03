@@ -40,6 +40,13 @@ BINARY_SENSORS: tuple[BookooBinarySensorEntityDescription, ...] = (
         icon="mdi:timer-sand",
         is_on_fn=lambda coordinator: coordinator.is_shot_active,
     ),
+    BookooBinarySensorEntityDescription(
+        key="current_shot_pre_infusion_active",
+        translation_key="current_shot_pre_infusion_active",
+        icon="mdi:water-opacity",  # Indicates water presence/flow state
+        # Consider device_class=BinarySensorDeviceClass.RUNNING if it makes sense for pre-infusion state
+        is_on_fn=lambda coordinator: coordinator.realtime_pre_infusion_active,
+    ),
 )
 
 

@@ -130,6 +130,35 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         if coordinator.last_shot_data
         else None,
     ),
+    # Real-time Analytics Sensors
+    BookooSensorEntityDescription(
+        key="current_shot_channeling_status",
+        translation_key="current_shot_channeling_status",  # Needs strings.json
+        icon="mdi:chart-scatter-plot",  # Example icon
+        value_fn=lambda coordinator: coordinator.realtime_channeling_status,
+    ),
+    BookooSensorEntityDescription(
+        key="current_shot_pre_infusion_duration",
+        translation_key="current_shot_pre_infusion_duration",  # Needs strings.json
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_display_precision=1,
+        icon="mdi:timelapse",
+        value_fn=lambda coordinator: coordinator.realtime_pre_infusion_duration,
+    ),
+    BookooSensorEntityDescription(
+        key="current_shot_extraction_uniformity",
+        translation_key="current_shot_extraction_uniformity",  # Needs strings.json
+        native_unit_of_measurement=PERCENTAGE,  # Will be 0.0-1.0, displayed as %
+        suggested_display_precision=1,
+        icon="mdi:chart-bell-curve-cumulative",  # Example icon
+        state_class=SensorStateClass.MEASUREMENT,  # Good for % values
+        value_fn=lambda coordinator: (
+            coordinator.realtime_extraction_uniformity * 100.0
+            if coordinator.realtime_extraction_uniformity is not None
+            else None
+        ),  # Convert 0.0-1.0 to 0-100 for HA percentage
+    ),
 )
 
 RESTORE_SENSORS: tuple[BookooSensorEntityDescription, ...] = (

@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeAlias  # For session_input_parameters and TypeAlias
 
-from aiobookoov2.const import UPDATE_SOURCE_COMMAND_CHAR, UPDATE_SOURCE_WEIGHT_CHAR
+from aiobookoov2.const import (
+    UPDATE_SOURCE_COMMAND_CHAR,
+    UPDATE_SOURCE_WEIGHT_CHAR,
+)
 import logging
+from . import analytics
 
 from .storage import async_add_shot_record
 
@@ -50,7 +54,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             name=entry.title,
             is_valid_scale=entry.data.get(CONF_IS_VALID_SCALE, False),
             notify_callback=self.async_update_listeners,  # General state update
-            characteristic_update_callback=self._handle_characteristic_update,  # Detailed char data
+            characteristic_update_callback=self._handle_characteristic_update,
+            # Detailed char data for characteristic_update_callback
         )
 
         super().__init__(
@@ -70,6 +75,12 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.session_input_parameters: dict[str, Any] = {}  # Initialized here
         self.session_start_trigger: str | None = None
         self.last_shot_data: dict[str, Any] = {}  # Initialized here
+
+        # Real-time analytics attributes
+        self.realtime_channeling_status: str = "Undetermined"
+        self.realtime_pre_infusion_active: bool = False
+        self.realtime_pre_infusion_duration: float | None = None
+        self.realtime_extraction_uniformity: float = 0.0
 
         # Load options
         self.min_shot_duration: int = 10  # Default
@@ -99,7 +110,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             OPTION_LINKED_COFFEE_NAME_ENTITY
         )
         _LOGGER.debug(
-            "Loaded options: Min Duration=%s, Bean Weight Entity=%s, Coffee Name Entity=%s",
+            "Loaded options. Min Duration: %s, Bean Weight Entity: %s, "
+            "Coffee Name Entity: %s",
             self.min_shot_duration,
             self.linked_bean_weight_entity_id,
             self.linked_coffee_name_entity_id,
@@ -111,7 +123,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         """Handle options update."""
         _LOGGER.debug("Bookoo options updated, reloading.")
         self._load_options()
-        # If options affect sensors directly, you might trigger self.async_update_listeners() here
+        # If options affect sensors directly,
+        # you might trigger self.async_update_listeners() here
 
     def _handle_characteristic_update(
         self, source: str, data: bytes | dict | None
@@ -119,7 +132,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         """Handle updates from aiobookoo's characteristic_update_callback."""
         # Initial log of what was received. Note: `data` can be None for weight char updates.
         _LOGGER.debug(
-            "[HANDLE_CHAR_DEBUG] Received update from source: %s, data type: %s, data: %s",
+            "[HANDLE_CHAR_DEBUG] Update from source: %s, type: %s, data: %s",
             source,
             type(data).__name__,
             data.hex() if isinstance(data, bytes) else data,
@@ -143,53 +156,65 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                         )
                     else:
                         _LOGGER.debug(
-                            "Scale auto-timer start event (decoded dict) received, but shot already active."
+                            "Scale auto-timer start event (decoded dict) received, "
+                            "but shot already active."
                         )
                 elif msg_type == "auto_timer" and event == "stop":
                     if self.is_shot_active:
                         _LOGGER.info("Scale auto-timer (decoded dict) stopped shot.")
+                        # Stop shot triggered by scale auto-timer
                         self.hass.async_create_task(
                             self._stop_session(stop_reason="scale_auto_dict")
                         )
                     else:
                         _LOGGER.debug(
-                            "Scale auto-timer stop event (decoded dict) received, but no shot active."
+                            "Scale auto-timer stop event (decoded dict) received, "
+                            "but no shot active."
                         )
-                # Add other command char dict handling here if needed (e.g., command responses)
+                # Add other command char dict handling here if needed
+                # (e.g., command responses)
                 else:
                     _LOGGER.debug("Received other decoded command dict: %s", data)
 
             elif isinstance(data, bytes):
-                # This case is for command char data that aiobookoov2 did not decode into a dict.
-                # This might include command acknowledgements or other non-event notifications.
+                # This case is for command char data that aiobookoov2
+                # did not decode into a dict.
+                # This might include command acknowledgements or other
+                # non-event notifications.
                 _LOGGER.debug(
-                    "Received raw bytes from command char: %s. Further parsing can be added if needed.",
+                    "Received raw bytes from command char: %s. Further parsing can be added.",
                     data.hex(),
                 )
-                # Example: if you expect specific raw byte responses to commands, parse them here.
+                # Example: if you expect specific raw byte responses to commands,
+                # parse them here.
 
             elif data is not None:
                 # Data from command char is not None, not dict, not bytes.
                 _LOGGER.warning(
-                    "Received command char update with unexpected data type: %s, data: %s",
+                    "Command char update with unexpected data type: %s, data: %s",
                     type(data).__name__,
                     data,
                 )
 
-            # else: data is None for command char. This shouldn't happen based on aiobookoov2's current design
-            # for command char, but good to be aware. If it does, the initial log will show it.
+            # else: data is None for command char. This shouldn't happen based on
+            # aiobookoov2's current design for command char, but good to be aware.
+            # If it does, the initial log will show it.
 
-            # Listeners are updated because a command might have changed state readable by other entities
-            # or triggered an action that entities should reflect.
+            # Listeners are updated because a command might have changed state
+            # readable by other entities or triggered an action that entities
+            # should reflect.
             self.async_update_listeners()
 
         elif source == UPDATE_SOURCE_WEIGHT_CHAR:
-            # Weight char update means the scale object (self.scale) has new data (weight, timer, flow_rate).
-            # The BookooScale._internal_notification_handler has already updated these internal attributes.
-            # The 'data' parameter for UPDATE_SOURCE_WEIGHT_CHAR is designed to be None from aiobookoov2.
+            # Weight char update means the scale object (self.scale) has new data
+            # (weight, timer, flow_rate).
+            # The BookooScale._internal_notification_handler has already updated
+            # these internal attributes.
+            # The 'data' parameter for UPDATE_SOURCE_WEIGHT_CHAR is designed to be
+            # None from aiobookoov2.
             if data is not None:
                 _LOGGER.warning(
-                    "Received unexpected data with UPDATE_SOURCE_WEIGHT_CHAR: %s. Expected None.",
+                    "Unexpected data with UPDATE_SOURCE_WEIGHT_CHAR: %s. Expected None.",
                     data,
                 )
 
@@ -197,7 +222,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                 "Weight Char Update. Scale state: Weight=%.2f, Timer=%.3f, Flow=%.2f",
                 self.scale.weight if self.scale.weight is not None else -1,
                 self.scale.timer if self.scale.timer is not None else -1,
-                self.scale.flow_rate if self.scale.flow_rate is not None else -1,
+                (self.scale.flow_rate if self.scale.flow_rate is not None else -1),
             )
             if self.is_shot_active and self.session_start_time_utc:
                 current_time_elapsed = (
@@ -211,9 +236,35 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                     self.session_flow_profile.append(
                         (current_time_elapsed, self.scale.flow_rate)
                     )
-                if self.scale.timer is not None:  # This is scale's own timer reading
+                if self.scale.timer is not None:
+                    # This is scale's own timer reading
                     self.session_scale_timer_profile.append(
-                        (current_time_elapsed, int(self.scale.timer * 1000))
+                        (round(current_time_elapsed, 2), int(self.scale.timer))
+                    )
+
+                # Calculate real-time analytics
+                if self.session_flow_profile:  # Ensure there's data to process
+                    self.realtime_channeling_status = analytics.detect_channeling(
+                        self.session_flow_profile
+                    )
+                    (
+                        self.realtime_pre_infusion_active,
+                        self.realtime_pre_infusion_duration,
+                    ) = analytics.identify_pre_infusion(
+                        self.session_flow_profile,
+                        self.session_scale_timer_profile,
+                    )
+                    self.realtime_extraction_uniformity = (
+                        analytics.calculate_extraction_uniformity(
+                            self.session_flow_profile
+                        )
+                    )
+                    _LOGGER.debug(
+                        "Real-time analytics: Ch=%s, PIActive=%s, PIDur=%s, Uniform=%.2f",
+                        self.realtime_channeling_status,
+                        self.realtime_pre_infusion_active,
+                        self.realtime_pre_infusion_duration,
+                        self.realtime_extraction_uniformity,
                     )
 
             self.async_update_listeners()  # Notify HA entities to update
@@ -266,7 +317,8 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         _LOGGER.info("HA service starting shot.")
         await self._start_session(trigger="ha_service")
         try:
-            # Call the correct method on the scale object, which internally uses async_send_command
+            # Call the correct method on the scale object,
+            # which internally uses async_send_command
             await self.scale.tare_and_start_timer()
             _LOGGER.debug("Sent Tare & Start Timer command to scale.")
         except BookooError as e:
@@ -295,7 +347,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         """Internal method to start a new shot session."""
         if self.is_shot_active:
             _LOGGER.warning(
-                "Attempted to start a new shot session (trigger: %s) but one is already active.",
+                "Attempted to start new shot (trigger: %s) but one is active.",
                 trigger,
             )
             return
@@ -305,8 +357,16 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.session_start_time_utc = dt_util.utcnow()
         self.session_flow_profile = []
         self.session_scale_timer_profile = []
+        self.session_weight_profile = []  # Initialized
         self.session_start_trigger = trigger
         self.session_input_parameters = {}  # Clear/initialize for the new session
+
+        # Reset real-time analytics
+        self.realtime_channeling_status = "Undetermined"
+        self.realtime_pre_infusion_active = False
+        self.realtime_pre_infusion_duration = None
+        self.realtime_extraction_uniformity = 0.0
+        _LOGGER.debug("Real-time analytics reset for new shot session.")
 
         # Read linked input_number/input_text entities
         if self.linked_bean_weight_entity_id:
@@ -345,7 +405,7 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                     self.linked_coffee_name_entity_id,
                 )
 
-        self.async_update_listeners()  # Notify HA about state change (e.g., binary_sensor)
+        self.async_update_listeners()  # Notify HA of state change
 
     async def _stop_session(self, stop_reason: str) -> None:
         """Internal method to stop the current shot session."""
@@ -363,33 +423,25 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             shot_duration,
         )
 
-        shot_status = "completed"
-        # Preserve start time and inputs for potential 'aborted_too_short' last_shot_data
-        # Ensure self.session_start_time_utc is not None before calling isoformat
-        original_start_time_utc_iso = (
-            self.session_start_time_utc.isoformat()
-            if self.session_start_time_utc
-            else None
-        )
+        shot_status = "completed"  # Default status
+        original_start_time_utc_iso = self.session_start_time_utc.isoformat()
         original_start_trigger = self.session_start_trigger
-        original_input_params = dict(
-            self.session_input_parameters
-        )  # Make a copy before it's cleared
+        original_input_params = dict(self.session_input_parameters)
 
         if stop_reason == "disconnected":
             shot_status = "aborted_disconnected"
         elif (
-            stop_reason not in ["ha_service_stop_forced"]
+            stop_reason not in ["ha_service_stop_forced"]  # Allow forced logging
             and shot_duration < self.min_shot_duration
         ):
             _LOGGER.info(
-                "Shot duration (%.2f s) is less than minimum configured (%s s). Aborting full log.",
+                "Shot duration (%.2f s) < min configured (%s s). Aborting, saving minimal.",
                 shot_duration,
                 self.min_shot_duration,
             )
             shot_status = "aborted_too_short"
 
-            self.last_shot_data = {
+            event_data = {
                 "device_id": self.config_entry.unique_id or self.config_entry.entry_id,
                 "entry_id": self.config_entry.entry_id,
                 "start_time_utc": original_start_time_utc_iso,
@@ -399,44 +451,63 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
                 "start_trigger": original_start_trigger,
                 "stop_reason": stop_reason,
                 "input_parameters": original_input_params,
-                "final_weight_grams": 0.0,  # No reliable final weight for aborted short shot
-                "flow_profile": [],  # No profile for aborted short shot
+                "final_weight_grams": 0.0,
+                "flow_profile": [],
+                "scale_timer_profile": [],
                 "average_flow_rate_gps": 0.0,
                 "peak_flow_rate_gps": 0.0,
                 "time_to_first_flow_seconds": None,
                 "time_to_peak_flow_seconds": None,
-                "scale_timer_profile": [],  # No profile for aborted short shot
+                "channeling_status": self.realtime_channeling_status,
+                "pre_infusion_detected": self.realtime_pre_infusion_active,
+                "pre_infusion_duration_seconds": (self.realtime_pre_infusion_duration),
+                "extraction_uniformity_metric": self.realtime_extraction_uniformity,
             }
-            # Reset session variables
+            self.last_shot_data = event_data.copy()
+
+            _LOGGER.info(
+                "Attempting to save 'aborted_too_short' shot record to SQLite."
+            )
+            await async_add_shot_record(self.hass, self.last_shot_data)
+
             self.is_shot_active = False
             self.session_start_time_utc = None
             self.session_flow_profile = []
             self.session_scale_timer_profile = []
+            self.session_weight_profile = []
             self.session_start_trigger = None
             self.session_input_parameters = {}
-            self.async_update_listeners()  # Notify HA about state change (shot ended)
-            return  # Do not fire full event for aborted short shot
+            self.realtime_channeling_status = "Undetermined"
+            self.realtime_pre_infusion_active = False
+            self.realtime_pre_infusion_duration = None
+            self.realtime_extraction_uniformity = 0.0
+            self.async_update_listeners()
+            return
 
-        # For completed shots (i.e., not aborted as too short):
         final_weight_grams = self.scale.weight if self.scale.weight is not None else 0.0
 
-        # Calculate aggregate metrics
         average_flow_rate_gps = 0.0
-        if shot_duration > 0 and final_weight_grams > 0:
+        if shot_duration > 0 and final_weight_grams > 0:  # Avoid division by zero
             average_flow_rate_gps = round(final_weight_grams / shot_duration, 2)
 
         peak_flow_rate_gps = 0.0
         time_to_peak_flow_seconds = None
         if self.session_flow_profile:
-            peak_flow_tuple = max(
-                self.session_flow_profile, key=lambda item: item[1], default=(None, 0.0)
-            )
-            if peak_flow_tuple[0] is not None:
-                time_to_peak_flow_seconds = round(peak_flow_tuple[0], 2)
-                peak_flow_rate_gps = round(peak_flow_tuple[1], 2)
+            valid_flow_points = [fp for fp in self.session_flow_profile if fp[1] > 0.01]
+            if valid_flow_points:
+                peak_flow_tuple = max(
+                    valid_flow_points,
+                    key=lambda item: item[1],
+                    default=(None, 0.0),
+                )
+                if peak_flow_tuple[0] is not None:
+                    time_to_peak_flow_seconds = round(peak_flow_tuple[0], 2)
+                    peak_flow_rate_gps = round(peak_flow_tuple[1], 2)
+            elif self.session_flow_profile:
+                peak_flow_rate_gps = 0.0
 
         time_to_first_flow_seconds = None
-        FIRST_FLOW_THRESHOLD_GPS = 0.2
+        FIRST_FLOW_THRESHOLD_GPS = 0.2  # Example threshold
         if self.session_flow_profile:
             for time_elapsed_fp, flow_rate_fp in self.session_flow_profile:
                 if flow_rate_fp > FIRST_FLOW_THRESHOLD_GPS:
@@ -452,10 +523,16 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             "final_weight_grams": round(final_weight_grams, 2),
             "flow_profile": self.session_flow_profile,
             "scale_timer_profile": self.session_scale_timer_profile,
-            "input_parameters": original_input_params,  # Added
-            "start_trigger": original_start_trigger,  # Added
-            "stop_reason": stop_reason,  # Added
-            "status": shot_status,  # Added
+            "input_parameters": original_input_params,
+            "start_trigger": original_start_trigger,
+            "stop_reason": stop_reason,
+            "status": shot_status,
+            # This will be 'completed' or 'aborted_disconnected'
+            # Real-time analytics results
+            "channeling_status": self.realtime_channeling_status,
+            "pre_infusion_detected": self.realtime_pre_infusion_active,
+            "pre_infusion_duration_seconds": self.realtime_pre_infusion_duration,
+            "extraction_uniformity_metric": self.realtime_extraction_uniformity,
             "average_flow_rate_gps": average_flow_rate_gps,
             "peak_flow_rate_gps": peak_flow_rate_gps,
             "time_to_first_flow_seconds": time_to_first_flow_seconds,
@@ -465,7 +542,6 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
         self.last_shot_data = event_data.copy()
         self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, self.last_shot_data)
 
-        # Log a version without full profiles for cleaner logs
         logged_event_data = {
             k: v
             for k, v in self.last_shot_data.items()
@@ -476,18 +552,20 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             logged_event_data,
         )
 
-        # Persist shot data to SQLite
         _LOGGER.info(
-            "Attempting to save shot record to SQLite database using self.last_shot_data."
+            "Attempting to save shot record to SQLite using self.last_shot_data."
         )
         await async_add_shot_record(self.hass, self.last_shot_data)
 
-        # Reset session variables
         self.is_shot_active = False
         self.session_start_time_utc = None
         self.session_flow_profile = []
         self.session_scale_timer_profile = []
+        self.session_weight_profile = []
         self.session_start_trigger = None
         self.session_input_parameters = {}
-
-        self.async_update_listeners()  # Notify HA about state change
+        self.realtime_channeling_status = "Undetermined"
+        self.realtime_pre_infusion_active = False
+        self.realtime_pre_infusion_duration = None
+        self.realtime_extraction_uniformity = 0.0
+        self.async_update_listeners()

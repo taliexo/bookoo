@@ -1,5 +1,7 @@
 """Constants for component."""
 
+from homeassistant.const import Platform
+
 DOMAIN = "bookoo"
 CONF_IS_VALID_SCALE = "is_valid_scale"
 
@@ -14,3 +16,10 @@ SERVICE_STOP_SHOT = "stop_shot"
 OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"
 OPTION_LINKED_BEAN_WEIGHT_ENTITY = "linked_bean_weight_entity"
 OPTION_LINKED_COFFEE_NAME_ENTITY = "linked_coffee_name_entity"
+
+
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,  # Buttons for start/stop shot services
+]

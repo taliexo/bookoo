@@ -87,6 +87,7 @@ def mock_hass():
         side_effect=lambda coro: asyncio.create_task(coro)
     )
     hass.loop = MagicMock()  # Use a mock loop
+    hass.async_add_executor_job = AsyncMock()  # Add this line
     return hass
 
 
@@ -285,7 +286,7 @@ class TestBookooCoordinator:
         assert coordinator.last_shot_data["duration_seconds"] == 10.0
         assert coordinator.last_shot_data["input_parameters"] == expected_input_params
         assert (
-            "Shot duration (10.00 s) is less than minimum configured (15 s). Aborting full log."
+            "Shot duration (10.00 s) < min configured (15 s). Aborting, saving minimal."
             in caplog.text
         )
 
@@ -445,8 +446,8 @@ class TestBookooCoordinator:
                 assert len(coordinator.session_scale_timer_profile) == 1
                 assert coordinator.session_scale_timer_profile[0] == (
                     5.0,
-                    5000,
-                )  # Timer stored as ms in profile
+                    5,  # Timer from scale.timer (seconds) is stored directly
+                )
 
             mock_update_listeners.assert_called_once()
 

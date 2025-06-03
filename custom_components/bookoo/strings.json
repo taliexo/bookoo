@@ -53,6 +53,9 @@
       },
       "shot_in_progress": {
         "name": "Shot in Progress"
+      },
+      "current_shot_pre_infusion_active": {
+        "name": "Current Shot Pre-infusion Active"
       }
     },
     "button": {
@@ -93,6 +96,15 @@
       },
       "last_shot_status": {
         "name": "Last Shot Status"
+      },
+      "current_shot_channeling_status": {
+        "name": "Current Shot Channeling Status"
+      },
+      "current_shot_pre_infusion_duration": {
+        "name": "Current Shot Pre-infusion Duration"
+      },
+      "current_shot_extraction_uniformity": {
+        "name": "Current Shot Extraction Uniformity"
       }
     }
   }
