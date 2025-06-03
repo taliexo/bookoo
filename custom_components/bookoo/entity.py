@@ -43,4 +43,4 @@ class BookooEntity(CoordinatorEntity[BookooCoordinator]):
     @property
     def available(self) -> bool:
         """Returns whether entity is available."""
-        return super().available and self._scale.connected
+        return bool(super().available and self._scale.connected)

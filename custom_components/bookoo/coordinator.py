@@ -8,6 +8,8 @@ from typing import Any, TypeAlias  # For session_input_parameters and TypeAlias
 from aiobookoov2.const import UPDATE_SOURCE_COMMAND_CHAR, UPDATE_SOURCE_WEIGHT_CHAR
 import logging
 
+from .storage import async_add_shot_record
+
 from aiobookoov2.bookooscale import BookooScale
 from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
 
@@ -450,26 +452,35 @@ class BookooCoordinator(DataUpdateCoordinator[None]):
             "final_weight_grams": round(final_weight_grams, 2),
             "flow_profile": self.session_flow_profile,
             "scale_timer_profile": self.session_scale_timer_profile,
-            "input_parameters": original_input_params,
-            "start_trigger": original_start_trigger,
-            "stop_reason": stop_reason,
-            "status": shot_status,
+            "input_parameters": original_input_params,  # Added
+            "start_trigger": original_start_trigger,  # Added
+            "stop_reason": stop_reason,  # Added
+            "status": shot_status,  # Added
             "average_flow_rate_gps": average_flow_rate_gps,
             "peak_flow_rate_gps": peak_flow_rate_gps,
             "time_to_first_flow_seconds": time_to_first_flow_seconds,
             "time_to_peak_flow_seconds": time_to_peak_flow_seconds,
         }
+
         self.last_shot_data = event_data.copy()
         self.hass.bus.async_fire(EVENT_BOOKOO_SHOT_COMPLETED, self.last_shot_data)
 
+        # Log a version without full profiles for cleaner logs
         logged_event_data = {
             k: v
-            for k, v in event_data.items()
+            for k, v in self.last_shot_data.items()
             if k not in ["flow_profile", "scale_timer_profile"]
         }
         _LOGGER.info(
-            "Fired EVENT_BOOKOO_SHOT_COMPLETED with data: %s", logged_event_data
+            "Fired EVENT_BOOKOO_SHOT_COMPLETED with (logged) data: %s",
+            logged_event_data,
         )
+
+        # Persist shot data to SQLite
+        _LOGGER.info(
+            "Attempting to save shot record to SQLite database using self.last_shot_data."
+        )
+        await async_add_shot_record(self.hass, self.last_shot_data)
 
         # Reset session variables
         self.is_shot_active = False

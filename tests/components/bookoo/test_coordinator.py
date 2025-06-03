@@ -291,8 +291,17 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     @freeze_time("2023-01-01 13:00:00")
+    @patch(
+        "custom_components.bookoo.coordinator.async_add_shot_record",
+        new_callable=AsyncMock,
+    )
     async def test_stop_session_logs_valid_shot_with_inputs(
-        self, coordinator: BookooCoordinator, mock_hass, mock_config_entry, caplog
+        self,
+        mock_coordinator_add_shot_record: AsyncMock,
+        coordinator: BookooCoordinator,
+        mock_hass,
+        mock_config_entry,
+        caplog,
     ):
         """Test _stop_session logs a valid shot and includes input_parameters in the event."""
         caplog.set_level(logging.INFO, logger="custom_components.bookoo.coordinator")
@@ -619,8 +628,13 @@ class TestBookooCoordinator:
     )  # To check log messages if needed
     @freeze_time("2023-01-01 12:00:00 UTC")
     @pytest.mark.asyncio
+    @patch(
+        "custom_components.bookoo.coordinator.async_add_shot_record",
+        new_callable=AsyncMock,
+    )
     async def test_stop_session_valid_shot(
         self,
+        mock_coordinator_add_shot_record: AsyncMock,
         mock_logger: MagicMock,
         mock_update_listeners: MagicMock,
         coordinator: BookooCoordinator,
@@ -763,8 +777,13 @@ class TestBookooCoordinator:
     @patch("custom_components.bookoo.coordinator._LOGGER")
     @freeze_time("2023-01-01 12:00:00 UTC")
     @pytest.mark.asyncio
+    @patch(
+        "custom_components.bookoo.coordinator.async_add_shot_record",
+        new_callable=AsyncMock,
+    )
     async def test_stop_session_disconnected_shot(
         self,
+        mock_coordinator_add_shot_record: AsyncMock,
         mock_logger: MagicMock,
         mock_update_listeners: MagicMock,
         coordinator: BookooCoordinator,
