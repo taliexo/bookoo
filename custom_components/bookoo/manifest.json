@@ -1,7 +1,7 @@
 {
   "domain": "bookoo",
   "name": "Bookoo",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "bluetooth": [
     {
       "local_name": "BOOKOO*"
