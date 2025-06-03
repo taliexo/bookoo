@@ -148,29 +148,6 @@ action:
       retain: false # Set to true if you want the last message to be retained
 ```
 
-**Consuming MQTT Data and Sending to InfluxDB:**
-
-Once the data is on the MQTT topic, you have several options to get it into InfluxDB:
-
-1.  **Telegraf:**
-    *   Telegraf has an [MQTT consumer input plugin](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/mqtt_consumer) and an [InfluxDB output plugin](https://github.com/influxdata/telegraf/tree/master/plugins/outputs/influxdb_v2).
-    *   You can configure Telegraf to subscribe to `bookoo/shot/completed`, parse the JSON payload (using `data_format = "json"` and potentially `json_v2` processor for complex parsing/tagging), and write it to InfluxDB. This is a very popular and efficient method.
-
-2.  **Node-RED:**
-    *   Use an "MQTT in" node to subscribe to the topic.
-    *   Use a "function" node to transform the JSON payload if needed.
-    *   Use an "InfluxDB out" node to write the data.
-
-3.  **Custom Script (Python, etc.):**
-    *   Write a script that subscribes to the MQTT topic using a client library (e.g., Paho MQTT for Python) and then writes to InfluxDB using an InfluxDB client library.
-
-**Advantages of MQTT:**
-*   **Decoupling:** Home Assistant only needs to publish the data; other services handle the ingestion into InfluxDB.
-*   **Flexibility:** Multiple subscribers can consume the shot data for different purposes.
-*   **Resilience:** If your InfluxDB instance is temporarily down, MQTT can often buffer messages (depending on broker configuration and QoS).
-
-This MQTT approach provides a clean separation of concerns and leverages a standard messaging protocol.
-
 ### 2. Send a Notification on Shot Completion
 
 ```yaml
@@ -251,5 +228,3 @@ A common approach is to export this event data to an external database. The "Log
     *   **Custom Scripts:** Python, Node.js, or other scripting languages can be used with appropriate MQTT and database client libraries.
 
 3.  **Analysis and Visualization:** Once your data is stored, you can use the querying language and visualization tools specific to your chosen database and platform (e.g., Grafana for InfluxDB/Prometheus, SQL queries, Python with Pandas/Matplotlib, R, or built-in tools of cloud platforms).
-
-This approach allows for powerful, customized analysis of your espresso brewing habits and results over time.
