@@ -233,60 +233,23 @@ template:
 
 *(More template sensor examples can be added here.)*
 
-## Querying Data from InfluxDB
+## Advanced Data Logging and Analysis
 
-If you are logging your espresso shot data to InfluxDB (e.g., via MQTT and Telegraf as described above), here are some InfluxQL queries you can use. These assume your Telegraf (or other consumer) configuration results in a measurement named `espresso_shot` with tags and fields derived from the JSON payload.
+For users looking to perform long-term trend analysis, create custom dashboards beyond Home Assistant's capabilities, or integrate shot data with other systems, the `bookoo_shot_completed` event provides all the necessary details.
 
-**Assumed Measurement (after MQTT processing):** `espresso_shot`
+A common approach is to export this event data to an external database. The "Log Shot Data via MQTT" example automation shows one way to get this data out of Home Assistant. Once the data is on an MQTT topic (or sent via another method like a webhook):
 
-**Measurement:** `espresso_shot`
+1.  **Choose a Data Store:** You can send the data to various types of databases:
+    *   **Time-series databases (TSDB):** Solutions like InfluxDB or Prometheus are ideal for recording time-stamped data like flow profiles and shot weights over time.
+    *   **SQL Databases:** PostgreSQL, MySQL, or SQLite can store structured shot data.
+    *   **NoSQL Databases:** Options like MongoDB can store the flexible JSON structure of the event data.
+    *   **Cloud Platforms:** Services like Google BigQuery, AWS Timestream, or Azure Data Explorer offer powerful analytics capabilities.
 
-**Tags:**
-*   `device_id`
-*   `coffee_name`
-*   `bean_weight_grams_input`
-*   `start_trigger`
-*   `stop_reason`
-*   `status`
+2.  **Data Ingestion:** Use a tool or script to subscribe to your MQTT topic (or receive webhook data) and write it to your chosen database.
+    *   **Telegraf:** Can consume MQTT and output to many databases, including InfluxDB, Prometheus, Kafka, etc.
+    *   **Node-RED:** Offers nodes for MQTT, various databases, and HTTP requests, allowing for flexible data routing and transformation.
+    *   **Custom Scripts:** Python, Node.js, or other scripting languages can be used with appropriate MQTT and database client libraries.
 
-**Fields:**
-*   `duration_seconds`
-*   `final_weight_grams`
-*   `average_flow_rate_gps`
-*   `peak_flow_rate_gps`
-*   `time_to_first_flow_seconds`
-*   `time_to_peak_flow_seconds`
-*   `bean_weight_grams` (field version of the input, converted to float)
+3.  **Analysis and Visualization:** Once your data is stored, you can use the querying language and visualization tools specific to your chosen database and platform (e.g., Grafana for InfluxDB/Prometheus, SQL queries, Python with Pandas/Matplotlib, R, or built-in tools of cloud platforms).
 
-### Example InfluxQL Queries
-
-1.  **Get all data for the last 5 completed shots:**
-    ```sql
-    SELECT * FROM "espresso_shot" WHERE "status" = 'completed' ORDER BY time DESC LIMIT 5
-    ```
-
-2.  **Calculate average shot duration and final weight for today:**
-    ```sql
-    SELECT MEAN("duration_seconds") AS "avg_duration", MEAN("final_weight_grams") AS "avg_weight" FROM "espresso_shot" WHERE time >= today() AND "status" = 'completed'
-    ```
-
-3.  **Get all data for shots using a specific coffee (e.g., "Ethiopia Yirgacheffe"):**
-    ```sql
-    SELECT * FROM "espresso_shot" WHERE "coffee_name" = 'Ethiopia Yirgacheffe' AND "status" = 'completed' ORDER BY time DESC
-    ```
-
-4.  **Calculate average flow rate for shots where bean dose was 18g:**
-    ```sql
-    SELECT MEAN("average_flow_rate_gps") AS "avg_flow_rate" FROM "espresso_shot" WHERE "bean_weight_grams_input" = '18.0' AND "status" = 'completed'
-    ```
-    *Note: `bean_weight_grams_input` is a tag and stores the value as a string. If you logged `bean_weight_grams` as a field (float), you could query it as `WHERE "bean_weight_grams" = 18.0`.*
-
-5.  **Count the number of shots per day for the last 7 days:**
-    ```sql
-    SELECT COUNT("duration_seconds") AS "num_shots" FROM "espresso_shot" WHERE time >= now() - 7d AND "status" = 'completed' GROUP BY time(1d) fill(0)
-    ```
-
-6.  **Get shots with an average flow rate greater than 2.0 g/s:**
-    ```sql
-    SELECT * FROM "espresso_shot" WHERE "average_flow_rate_gps" > 2.0 AND "status" = 'completed' ORDER BY time DESC
-    ```
+This approach allows for powerful, customized analysis of your espresso brewing habits and results over time.
