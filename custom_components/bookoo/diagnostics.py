@@ -7,7 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import BookooConfigEntry
+from .coordinator import BookooConfigEntry, BookooCoordinator
 
 
 async def async_get_config_entry_diagnostics(
@@ -15,7 +15,7 @@ async def async_get_config_entry_diagnostics(
     entry: BookooConfigEntry,
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    coordinator = entry.runtime_data
+    coordinator: BookooCoordinator = entry.runtime_data
     scale = coordinator.scale
 
     # collect all data sources

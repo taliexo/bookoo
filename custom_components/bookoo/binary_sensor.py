@@ -38,7 +38,7 @@ BINARY_SENSORS: tuple[BookooBinarySensorEntityDescription, ...] = (
         key="shot_in_progress",
         translation_key="shot_in_progress",  # Needs entry in strings.json
         icon="mdi:timer-sand",
-        is_on_fn=lambda coordinator: coordinator.is_shot_active,
+        is_on_fn=lambda coordinator: coordinator.session_manager.is_shot_active,
     ),
     BookooBinarySensorEntityDescription(
         key="current_shot_pre_infusion_active",

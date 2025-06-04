@@ -83,8 +83,11 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         suggested_display_precision=1,
         icon="mdi:timer-outline",
         value_fn=lambda coordinator: (
-            (dt_util.utcnow() - coordinator.session_start_time_utc).total_seconds()
-            if coordinator.is_shot_active and coordinator.session_start_time_utc
+            (
+                dt_util.utcnow() - coordinator.session_manager.session_start_time_utc
+            ).total_seconds()
+            if coordinator.session_manager.is_shot_active
+            and coordinator.session_manager.session_start_time_utc
             else 0.0
         ),
     ),
@@ -96,7 +99,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_display_precision=1,
         icon="mdi:history",
-        value_fn=lambda coordinator: coordinator.last_shot_data.get("duration_seconds")
+        value_fn=lambda coordinator: coordinator.last_shot_data.duration_seconds
         if coordinator.last_shot_data
         else None,
     ),
@@ -107,9 +110,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfMass.GRAMS,
         suggested_display_precision=1,
         icon="mdi:weight-gram",
-        value_fn=lambda coordinator: coordinator.last_shot_data.get(
-            "final_weight_grams"
-        )
+        value_fn=lambda coordinator: coordinator.last_shot_data.final_weight_grams
         if coordinator.last_shot_data
         else None,
     ),
@@ -119,9 +120,9 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-start",
         value_fn=lambda coordinator: (
-            dt_util.parse_datetime(coordinator.last_shot_data["start_time_utc"])
+            dt_util.parse_datetime(coordinator.last_shot_data.start_time_utc)
             if coordinator.last_shot_data
-            and coordinator.last_shot_data.get("start_time_utc")
+            and coordinator.last_shot_data.start_time_utc  # Direct attribute access implies existence
             else None
         ),
     ),
@@ -129,7 +130,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         key="last_shot_status",
         translation_key="last_shot_status",  # Needs strings.json
         icon="mdi:list-status",
-        value_fn=lambda coordinator: coordinator.last_shot_data.get("status")
+        value_fn=lambda coordinator: coordinator.last_shot_data.status
         if coordinator.last_shot_data
         else None,
     ),

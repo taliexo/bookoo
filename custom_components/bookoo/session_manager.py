@@ -127,9 +127,7 @@ class SessionManager:
                     self.coordinator.bookoo_config.linked_coffee_name_entity,
                 )
         # Coordinator will handle resetting its own realtime analytics and updating listeners
-        await (
-            self.coordinator.async_update_listeners()
-        )  # Notify HA of state change (shot active)
+        self.coordinator.async_update_listeners()  # Notify HA of state change (shot active)
 
     async def stop_session(self, stop_reason: str) -> None:
         """Stops the current shot session, calculates metrics, and fires event."""
@@ -231,7 +229,7 @@ class SessionManager:
 
             self._reset_internal_session_state()
             self.coordinator._reset_realtime_analytics()  # Reset analytics on coordinator
-            await self.coordinator.async_update_listeners()
+            self.coordinator.async_update_listeners()
             return
 
         final_weight_grams = (
@@ -318,7 +316,7 @@ class SessionManager:
             )
             # Decide how to handle: maybe return, or fire a minimal error event
             self._reset_internal_session_state()
-            await self.coordinator.async_update_listeners()
+            self.coordinator.async_update_listeners()
             return
 
         logged_event_data = {}

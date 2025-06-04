@@ -26,9 +26,7 @@ from .const import BookooConfig, CONF_IS_VALID_SCALE  # Assuming DOMAIN might be
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for the config entry specific to this integration
-BookooConfigEntry: TypeAlias = ConfigEntry[
-    BookooConfig
-]  # Or just ConfigEntry if BookooConfig is not stored directly
+BookooConfigEntry: TypeAlias = ConfigEntry  # runtime_data will store BookooCoordinator
 
 SCAN_INTERVAL = timedelta(seconds=5)  # Example, adjust as needed
 
