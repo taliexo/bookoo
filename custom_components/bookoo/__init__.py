@@ -6,15 +6,13 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PLATFORMS, SERVICE_START_SHOT, SERVICE_STOP_SHOT
 from .coordinator import BookooConfigEntry, BookooCoordinator
-from .storage import async_init_db
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bool:
     """Set up bookoo as config entry."""
 
     coordinator = BookooCoordinator(hass, entry)
-    await async_init_db(hass)  # Initialize the database
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_config_entry_first_refresh()  # Perform initial data fetch
 
     entry.runtime_data = coordinator
 

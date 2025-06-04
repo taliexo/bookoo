@@ -36,7 +36,6 @@ class BookooEntity(CoordinatorEntity[BookooCoordinator]):
             name=scale.name,  # Use scale's name for the device name
             manufacturer="Bookoo",
             model=scale.model,
-            suggested_area="Kitchen",
             connections={(CONNECTION_BLUETOOTH, scale.mac)},
         )
 

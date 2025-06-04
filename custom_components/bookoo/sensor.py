@@ -33,7 +33,11 @@ PARALLEL_UPDATES = 0
 
 @dataclass(kw_only=True, frozen=True)
 class BookooSensorEntityDescription(SensorEntityDescription):
-    """Description for Bookoo sensor entities."""
+    """Describes a Bookoo sensor entity.
+
+    Attributes:
+        value_fn: Callable that takes the BookooCoordinator and returns the sensor's state.
+    """
 
     value_fn: Callable[
         [BookooCoordinator], int | float | str | datetime | None
@@ -42,7 +46,12 @@ class BookooSensorEntityDescription(SensorEntityDescription):
 
 @dataclass(kw_only=True, frozen=True)
 class BookooDynamicUnitSensorEntityDescription(BookooSensorEntityDescription):
-    """Description for Bookoo sensor entities with dynamic units."""
+    """Describes a Bookoo sensor entity with potentially dynamic units.
+
+    Attributes:
+        unit_fn: Optional callable that takes BookooDeviceState and returns the unit string.
+                 (Currently not used, native_unit_of_measurement is primary).
+    """
 
     unit_fn: Callable[[BookooDeviceState], str] | None = None
 
@@ -195,7 +204,11 @@ async def async_setup_entry(
     entry: BookooConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensors."""
+    """Set up Bookoo sensor entities based on the config entry.
+
+    Creates sensor entities for various scale readings, shot metrics,
+    and real-time analytics.
+    """
 
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [
@@ -208,8 +221,12 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BookooSensor(SensorEntity, BookooEntity):
-    """Representation of an Bookoo sensor."""
+class BookooSensor(BookooEntity, SensorEntity):
+    """Representation of a generic Bookoo sensor.
+
+    This class serves as the base for sensors that derive their state directly
+    from the coordinator via a `value_fn` defined in their entity description.
+    """
 
     entity_description: BookooSensorEntityDescription
 
@@ -245,7 +262,11 @@ class BookooSensor(SensorEntity, BookooEntity):
 
 
 class BookooRestoreSensor(BookooEntity, RestoreSensor):
-    """Representation of an Bookoo sensor with restore capabilities."""
+    """Representation of a Bookoo sensor that can restore its state.
+
+    Used for sensors like battery level that should retain their last known
+    value across Home Assistant restarts if the device is temporarily unavailable.
+    """
 
     entity_description: BookooSensorEntityDescription
     _restored_data: SensorExtraStoredData | None = None

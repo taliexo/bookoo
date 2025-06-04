@@ -1,114 +1,146 @@
-"""Handles SQLite storage for Bookoo shot history."""
+"""Handles storage for Bookoo shot history using Home Assistant's Store."""
 
-import json
 import logging
-import sqlite3
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
+
+from .types import (
+    BookooShotCompletedEventDataModel,  # Assuming this is the Pydantic model
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-DB_FILE_NAME = "bookoo_shots.db"
-TABLE_SHOTS = "shots"
+STORAGE_KEY = "bookoo_shot_history"
+STORAGE_VERSION = 1
+
+# Consider adding a check for old SQLite DB and logging a one-time migration notice.
+_LOGGER.warning(
+    "Bookoo integration now uses Home Assistant's internal storage for shot history. "
+    "Existing data from bookoo_shots.db (SQLite) will not be automatically migrated. "
+    "New shots will be saved to the new format."
+)
 
 
-def _get_db_path(hass: HomeAssistant) -> Path:
-    """Get the path to the SQLite database file."""
-    return Path(hass.config.path(DB_FILE_NAME))
+def _get_store(hass: HomeAssistant) -> Store[list[dict[str, Any]]]:
+    """Get the Store instance for shot history.
+
+    Initializes and returns a Home Assistant Store object for persisting
+    shot data as a list of dictionaries.
+    """
+    # The Store will hold a list of shot data dictionaries.
+    return cast(Store[list[dict[str, Any]]], Store(hass, STORAGE_VERSION, STORAGE_KEY))
 
 
-def _init_db_sync(db_path: Path) -> None:
-    """Initialize the database and create tables if they don't exist (synchronous)."""
+async def async_add_shot_record(
+    hass: HomeAssistant, shot_data: BookooShotCompletedEventDataModel
+) -> None:
+    """Add a shot record to the persistent Store.
+
+    Loads the current history, appends the new shot data (after converting
+    the Pydantic model to a dictionary), and saves the updated history.
+
+    Args:
+        hass: The HomeAssistant instance.
+        shot_data: The Pydantic model instance of the completed shot.
+    """
+    store = _get_store(hass)
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS {TABLE_SHOTS} (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp_utc TEXT NOT NULL,
-                    duration_seconds REAL,
-                    final_weight_grams REAL,
-                    flow_profile_json TEXT,
-                    scale_timer_profile_json TEXT,
-                    input_parameters_json TEXT,
-                    start_trigger TEXT,
-                    stop_reason TEXT,
-                    channeling_status TEXT,
-                    pre_infusion_detected INTEGER, /* Boolean: 0 or 1 */
-                    pre_infusion_duration_seconds REAL,
-                    extraction_uniformity_metric REAL
-                )
-                """
-            )
-            conn.commit()
-            _LOGGER.info("Bookoo shot database initialized at %s", db_path)
-    except sqlite3.Error as e:
-        _LOGGER.error("Error initializing Bookoo shot database: %s", e)
-        raise
+        shot_history = await store.async_load() or []
+    except Exception as e:  # pylint: disable=broad-except
+        _LOGGER.error(
+            "Error loading shot history from store: %s. Initializing new history.",
+            e,
+            exc_info=True,
+        )
+        shot_history = []
 
+    # Convert Pydantic model to dict for storage, if it's not already a dict
+    # If BookooShotCompletedEventDataModel is a Pydantic model, use .model_dump()
+    shot_data_dict = shot_data.model_dump(
+        mode="json"
+    )  # mode='json' ensures datetimes are ISO strings
 
-async def async_init_db(hass: HomeAssistant) -> None:
-    """Initialize the database (asynchronous)."""
-    db_path = _get_db_path(hass)
-    await hass.async_add_executor_job(_init_db_sync, db_path)
+    shot_history.append(shot_data_dict)
 
-
-def _add_shot_record_sync(db_path: Path, shot_data: dict[str, Any]) -> None:
-    """Add a shot record to the database (synchronous)."""
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            # Prepare data for insertion, ensuring all keys from the schema are present
-            # or have defaults (None for optional fields).
-            record = {
-                "timestamp_utc": shot_data.get("timestamp_utc"),
-                "duration_seconds": shot_data.get("duration_seconds"),
-                "final_weight_grams": shot_data.get("final_weight_grams"),
-                "flow_profile_json": json.dumps(shot_data.get("flow_profile"))
-                if shot_data.get("flow_profile") is not None
-                else None,
-                "scale_timer_profile_json": json.dumps(
-                    shot_data.get("scale_timer_profile")
-                )
-                if shot_data.get("scale_timer_profile") is not None
-                else None,
-                "input_parameters_json": json.dumps(shot_data.get("input_parameters"))
-                if shot_data.get("input_parameters") is not None
-                else None,
-                "start_trigger": shot_data.get("start_trigger"),
-                "stop_reason": shot_data.get("stop_reason"),
-                "channeling_status": shot_data.get("channeling_status"),  # Part 2
-                "pre_infusion_detected": shot_data.get(
-                    "pre_infusion_detected"
-                ),  # Part 2
-                "pre_infusion_duration_seconds": shot_data.get(
-                    "pre_infusion_duration_seconds"
-                ),  # Part 2
-                "extraction_uniformity_metric": shot_data.get(
-                    "extraction_uniformity_metric"
-                ),  # Part 2
-            }
+        await store.async_save(shot_history)
+        _LOGGER.debug(
+            "Successfully added shot record to HA Store: %s",
+            shot_data_dict.get(
+                "start_time_utc"
+            ),  # Use start_time_utc from Pydantic model
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        _LOGGER.error(
+            "Error saving shot record to HA Store %s: %s",
+            shot_data_dict.get("start_time_utc"),
+            e,
+            exc_info=True,
+        )
 
-            columns = ", ".join(record.keys())
-            placeholders = ":" + ", :".join(record.keys())
-            sql = f"INSERT INTO {TABLE_SHOTS} ({columns}) VALUES ({placeholders})"
 
-            cursor.execute(sql, record)
-            conn.commit()
-            _LOGGER.debug(
-                "Bookoo shot record added: %s", shot_data.get("timestamp_utc")
+async def async_get_shot_history(
+    hass: HomeAssistant, limit: int | None = None
+) -> list[BookooShotCompletedEventDataModel]:
+    """Retrieve shot history from the Store, optionally limited.
+
+    Loads shot data dictionaries from the Store, validates them back into
+    Pydantic models, and returns a list of these models.
+
+    Args:
+        hass: The HomeAssistant instance.
+        limit: Optional maximum number of recent shots to return.
+
+    Returns:
+        A list of BookooShotCompletedEventDataModel instances.
+    """
+    store = _get_store(hass)
+    try:
+        shot_history_dicts = await store.async_load() or []
+    except Exception as e:  # pylint: disable=broad-except
+        _LOGGER.error(
+            "Error loading shot history from store: %s. Returning empty list.",
+            e,
+            exc_info=True,
+        )
+        return []
+
+    # Validate and parse back to Pydantic models
+    validated_shots: list[BookooShotCompletedEventDataModel] = []
+    for shot_dict in shot_history_dicts:
+        try:
+            validated_shots.append(BookooShotCompletedEventDataModel(**shot_dict))
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.warning(
+                "Skipping invalid shot data during retrieval: %s. Error: %s",
+                shot_dict.get("start_time_utc"),
+                e,
             )
-    except sqlite3.Error as e:
-        _LOGGER.error("Error adding Bookoo shot record: %s", e)
-        # Not raising here to avoid crashing the coordinator if DB write fails
-    except json.JSONDecodeError as e:
-        _LOGGER.error("Error serializing shot data to JSON: %s", e)
+            continue  # Skip invalid records
+
+    if limit is not None and limit > 0:
+        return validated_shots[-limit:]  # Return the most recent 'limit' shots
+    return validated_shots
 
 
-async def async_add_shot_record(hass: HomeAssistant, shot_data: dict[str, Any]) -> None:
-    """Add a shot record to the database (asynchronous)."""
-    db_path = _get_db_path(hass)
-    await hass.async_add_executor_job(_add_shot_record_sync, db_path, shot_data)
+async def async_delete_shot_history(hass: HomeAssistant) -> None:
+    """Delete all shot history from the Store.
+
+    Removes the entire storage file containing shot history.
+
+    Args:
+        hass: The HomeAssistant instance.
+    """
+    store = _get_store(hass)
+    try:
+        await store.async_remove()  # Removes the entire store file
+        _LOGGER.info("Successfully deleted all Bookoo shot history from HA Store.")
+    except Exception as e:  # pylint: disable=broad-except
+        _LOGGER.error(
+            "Error deleting Bookoo shot history from HA Store: %s", e, exc_info=True
+        )
+
+
+# Note: `async_init_db` is no longer needed as Store handles its own initialization.

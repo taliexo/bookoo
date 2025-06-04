@@ -1,6 +1,7 @@
 """Tests for the SessionManager class in Bookoo integration."""
 
 import asyncio
+import collections  # Added import
 import logging
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from custom_components.bookoo.const import (
     DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
     DEFAULT_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
     DEFAULT_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION,
+    DEFAULT_COMMAND_TIMEOUT,  # Added import
+    DEFAULT_CONNECT_TIMEOUT,  # Added import
     EVENT_BOOKOO_SHOT_COMPLETED,
     BookooConfig,
 )
@@ -28,7 +31,10 @@ from custom_components.bookoo.coordinator import (
 )
 
 # For type hinting mock
-from custom_components.bookoo.session_manager import SessionManager
+from custom_components.bookoo.session_manager import (  # Added import
+    MAX_PROFILE_POINTS,
+    SessionManager,
+)
 from custom_components.bookoo.types import (
     BookooShotCompletedEventDataModel,
     FlowDataPoint,
@@ -90,6 +96,8 @@ def bookoo_config_default(mock_config_entry_session_manager: ConfigEntry):
         auto_stop_min_duration_for_stability=DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
         auto_stop_flow_cutoff_threshold=DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
         auto_stop_min_duration_for_cutoff=DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
+        connect_timeout=DEFAULT_CONNECT_TIMEOUT,  # Added missing
+        command_timeout=DEFAULT_COMMAND_TIMEOUT,  # Added missing
     )
 
 
@@ -145,9 +153,15 @@ class TestSessionManager:
         assert session_manager.coordinator is mock_coordinator_session_manager
         assert not session_manager.is_shot_active
         assert session_manager.session_start_time_utc is None
-        assert session_manager.session_flow_profile == []
-        assert session_manager.session_weight_profile == []
-        assert session_manager.session_scale_timer_profile == []
+        assert session_manager.session_flow_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
+        assert session_manager.session_weight_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
+        assert session_manager.session_scale_timer_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
         assert session_manager.session_input_parameters == {}
         assert session_manager.session_start_trigger is None
         assert session_manager.last_shot_data is None
@@ -663,9 +677,15 @@ class TestSessionManager:
         # Set up some state
         session_manager.is_shot_active = True
         session_manager.session_start_time_utc = datetime.now(timezone.utc)
-        session_manager.session_flow_profile = [FlowDataPoint(1.0, 0.5)]
-        session_manager.session_weight_profile = [WeightDataPoint(1.0, 10.0)]
-        session_manager.session_scale_timer_profile = [ScaleTimerDataPoint(1.0, 1)]
+        session_manager.session_flow_profile = collections.deque(
+            [FlowDataPoint(1.0, 0.5)], maxlen=MAX_PROFILE_POINTS
+        )
+        session_manager.session_weight_profile = collections.deque(
+            [WeightDataPoint(1.0, 10.0)], maxlen=MAX_PROFILE_POINTS
+        )
+        session_manager.session_scale_timer_profile = collections.deque(
+            [ScaleTimerDataPoint(1.0, 1)], maxlen=MAX_PROFILE_POINTS
+        )
         session_manager.session_input_parameters = {"key": "value"}
         session_manager.session_start_trigger = "test_trigger"
         # last_shot_data is not reset by this internal method, but by _reset_session_variables
@@ -676,8 +696,14 @@ class TestSessionManager:
             not session_manager.is_shot_active
         )  # is_shot_active is reset by _reset_session_variables
         assert session_manager.session_start_time_utc is None
-        assert session_manager.session_flow_profile == []
-        assert session_manager.session_weight_profile == []
-        assert session_manager.session_scale_timer_profile == []
+        assert session_manager.session_flow_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
+        assert session_manager.session_weight_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
+        assert session_manager.session_scale_timer_profile == collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
         assert session_manager.session_input_parameters == {}
         assert session_manager.session_start_trigger is None

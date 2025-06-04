@@ -1,7 +1,12 @@
-"""Coordinator for Bookoo integration."""
+"""Data update coordinator and central hub for the Bookoo Home Assistant integration.
+
+Manages the connection to the Bookoo scale, handles data updates,
+coordinates shot sessions, and provides data to entities.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import TypeAlias  # For Optional type hint and TypeAlias
@@ -25,15 +30,26 @@ from .types import BookooShotCompletedEventDataModel
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for the config entry specific to this integration
-BookooConfigEntry: TypeAlias = ConfigEntry  # runtime_data will store BookooCoordinator
+BookooConfigEntry: TypeAlias = ConfigEntry["BookooCoordinator"]
 
 SCAN_INTERVAL = timedelta(seconds=5)  # Example, adjust as needed
+ANALYTICS_UPDATE_INTERVAL = timedelta(
+    seconds=0.5
+)  # Update analytics at most every 0.5 seconds
 
 
 class BookooCoordinator(
     DataUpdateCoordinator[None]
 ):  # Specify None if not pushing polled data
-    """Class to handle fetching data from the scale and coordinating updates."""
+    """Manages all interactions with the Bookoo scale and integration data.
+
+    This coordinator handles:
+    - Bluetooth connection and data parsing from the BookooScale.
+    - Shot session management via the SessionManager.
+    - Real-time analytics updates.
+    - Service call handling for starting/stopping shots.
+    - Providing data updates to registered listeners (entities).
+    """
 
     config_entry: BookooConfigEntry  # Type hint for the config entry
 
@@ -73,6 +89,7 @@ class BookooCoordinator(
         self._options_update_listener = entry.add_update_listener(
             self._options_update_callback
         )
+        self._last_analytics_update_time: datetime | None = None
 
     @property
     def scale(self) -> BookooScale:
@@ -104,6 +121,126 @@ class BookooCoordinator(
         self.realtime_extraction_uniformity = 0.0
         self.realtime_shot_quality_score = 0.0
         _LOGGER.debug("%s: Coordinator real-time analytics reset.", self.name)
+        self._last_analytics_update_time = (
+            None  # Reset for immediate calculation on new shot
+        )
+
+    def _handle_command_char_update(self, data: bytes | dict | None) -> None:
+        """Handle updates from the command characteristic."""
+        if isinstance(data, bytes):
+            _LOGGER.debug("Received raw bytes from command char: %s.", data.hex())
+            self.async_update_listeners()  # Update listeners as scale state might be implied
+            return
+
+        if not isinstance(data, dict):
+            # If data is None or an unexpected type, still update listeners
+            # as a characteristic update occurred.
+            _LOGGER.debug(
+                "Command char update with no data or unexpected type: %s", type(data)
+            )
+            self.async_update_listeners()
+            return
+
+        # At this point, data is a dict
+        msg_type = data.get("type")
+        event = data.get("event")
+        _LOGGER.debug(
+            "Processing decoded command data: type='%s', event='%s'", msg_type, event
+        )
+
+        if msg_type == "auto_timer":
+            if event == "start" and not self.session_manager.is_shot_active:
+                _LOGGER.info(
+                    "%s: Scale auto-timer (decoded dict) started shot.", self.name
+                )
+                self._reset_realtime_analytics()
+                self.hass.async_create_task(
+                    self.session_manager.start_session(trigger="scale_auto_dict")
+                )
+            elif event == "stop" and self.session_manager.is_shot_active:
+                _LOGGER.info(
+                    "%s: Scale auto-timer (decoded dict) stopped shot.", self.name
+                )
+                self.hass.async_create_task(
+                    self.session_manager.stop_session(stop_reason="scale_auto_dict")
+                )
+
+        # Always update listeners after processing command char data,
+        # as actions taken (or not taken) might be relevant.
+        self.async_update_listeners()
+
+    def _update_realtime_analytics_if_needed(self) -> None:
+        """Update real-time analytics if a shot is active and throttling interval has passed."""
+        if not (
+            self.session_manager.is_shot_active  # Ensure shot is still active
+            and self.session_manager.session_start_time_utc  # And start time is set
+        ):
+            return
+
+        now = datetime.now(timezone.utc)
+        if not (
+            self._last_analytics_update_time is None
+            or (now - self._last_analytics_update_time) > ANALYTICS_UPDATE_INTERVAL
+        ):
+            return  # Throttled
+
+        if not self.session_manager.session_flow_profile:  # Ensure there's data
+            _LOGGER.debug("%s: No flow profile data to update analytics.", self.name)
+            return
+
+        _LOGGER.debug("%s: Updating real-time analytics.", self.name)
+        self.realtime_channeling_status = self.shot_analyzer.detect_channeling(
+            list(self.session_manager.session_flow_profile)
+        )
+        (
+            self.realtime_pre_infusion_active,
+            self.realtime_pre_infusion_duration,
+        ) = self.shot_analyzer.identify_pre_infusion(
+            list(self.session_manager.session_flow_profile),
+            list(self.session_manager.session_scale_timer_profile),
+        )
+        self.realtime_extraction_uniformity = (
+            self.shot_analyzer.calculate_extraction_uniformity(
+                list(self.session_manager.session_flow_profile)
+            )
+        )
+        self._update_shot_quality_score()  # This method calculates and sets realtime_shot_quality_score
+        self._last_analytics_update_time = now
+        self.async_update_listeners()  # Update listeners after analytics change
+
+    def _handle_weight_char_update(self) -> None:
+        """Handle updates from the weight characteristic."""
+        # Note: `data` argument is not used here as aiobookoov2's callback for weight
+        # char provides None for `data`, and we rely on self._scale attributes.
+        if (
+            self.session_manager.is_shot_active
+            and self.session_manager.session_start_time_utc
+        ):
+            current_time_elapsed = (
+                datetime.now(timezone.utc) - self.session_manager.session_start_time_utc
+            ).total_seconds()
+
+            if self._scale.weight is not None:
+                self.session_manager.add_weight_data(
+                    current_time_elapsed, self._scale.weight
+                )
+            if self._scale.flow_rate is not None:
+                self.session_manager.add_flow_data(
+                    current_time_elapsed, self._scale.flow_rate
+                )
+            if self._scale.timer is not None:
+                self.session_manager.add_scale_timer_data(
+                    current_time_elapsed, int(self._scale.timer)
+                )
+
+            self._update_realtime_analytics_if_needed()
+
+        # Always update listeners for weight char as it drives sensor updates.
+        # The _update_realtime_analytics_if_needed method also calls this, but
+        # we want to ensure an update even if analytics weren't re-calculated
+        # (e.g. due to throttling or no flow data yet) because basic scale
+        # weight/timer sensors should still refresh.
+        self.async_update_listeners()
 
     def _handle_characteristic_update(
         self, source: str, data: bytes | dict | None
@@ -118,92 +255,15 @@ class BookooCoordinator(
         )
 
         if source == UPDATE_SOURCE_COMMAND_CHAR:
-            if isinstance(data, dict):
-                msg_type = data.get("type")
-                event = data.get("event")
-                _LOGGER.debug(
-                    "Processing decoded command data: type='%s', event='%s'",
-                    msg_type,
-                    event,
-                )
-                if msg_type == "auto_timer" and event == "start":
-                    if not self.session_manager.is_shot_active:
-                        _LOGGER.info(
-                            "%s: Scale auto-timer (decoded dict) started shot.",
-                            self.name,
-                        )
-                        self._reset_realtime_analytics()
-                        self.hass.async_create_task(
-                            self.session_manager.start_session(
-                                trigger="scale_auto_dict"
-                            )
-                        )
-                elif msg_type == "auto_timer" and event == "stop":
-                    if self.session_manager.is_shot_active:
-                        _LOGGER.info(
-                            "%s: Scale auto-timer (decoded dict) stopped shot.",
-                            self.name,
-                        )
-                        self.hass.async_create_task(
-                            self.session_manager.stop_session(
-                                stop_reason="scale_auto_dict"
-                            )
-                        )
-            elif isinstance(data, bytes):
-                _LOGGER.debug("Received raw bytes from command char: %s.", data.hex())
-            # Potentially update listeners if command char changes state relevant to HA
-            self.async_update_listeners()
-
+            self._handle_command_char_update(data)
         elif source == UPDATE_SOURCE_WEIGHT_CHAR:
-            if data is not None:  # Should be None from aiobookoov2
+            # The `data` param for weight char is None from aiobookoov2, handled in helper.
+            if data is not None:
                 _LOGGER.warning(
                     "Unexpected data with UPDATE_SOURCE_WEIGHT_CHAR: %s. Expected None.",
                     data,
                 )
-
-            if (
-                self.session_manager.is_shot_active
-                and self.session_manager.session_start_time_utc
-            ):
-                current_time_elapsed = (
-                    datetime.now(timezone.utc)
-                    - self.session_manager.session_start_time_utc
-                ).total_seconds()
-
-                if self._scale.weight is not None:
-                    self.session_manager.add_weight_data(
-                        current_time_elapsed, self._scale.weight
-                    )
-                if self._scale.flow_rate is not None:
-                    self.session_manager.add_flow_data(
-                        current_time_elapsed, self._scale.flow_rate
-                    )
-                if self._scale.timer is not None:
-                    self.session_manager.add_scale_timer_data(
-                        current_time_elapsed, int(self._scale.timer)
-                    )
-
-                if self.session_manager.session_flow_profile:  # Ensure there's data
-                    self.realtime_channeling_status = (
-                        self.shot_analyzer.detect_channeling(
-                            self.session_manager.session_flow_profile
-                        )
-                    )
-                    (
-                        self.realtime_pre_infusion_active,
-                        self.realtime_pre_infusion_duration,
-                    ) = self.shot_analyzer.identify_pre_infusion(
-                        self.session_manager.session_flow_profile,
-                        self.session_manager.session_scale_timer_profile,
-                    )
-                    self.realtime_extraction_uniformity = (
-                        self.shot_analyzer.calculate_extraction_uniformity(
-                            self.session_manager.session_flow_profile
-                        )
-                    )
-                    self._update_shot_quality_score()
-            # Always update listeners for weight char as it drives sensor updates
-            self.async_update_listeners()
+            self._handle_weight_char_update()
         else:
             _LOGGER.warning("Unknown characteristic update source: %s", source)
 
@@ -249,6 +309,103 @@ class BookooCoordinator(
             )
         )
 
+    def _ensure_queue_processor_running(self) -> None:
+        """Ensures the BookooScale's process_queue task is running."""
+        if not self._scale.connected:
+            _LOGGER.warning(
+                "%s: Cannot ensure queue processor running, scale not connected.",
+                self.name,
+            )
+            return
+
+        if (
+            self._scale.process_queue_task is None
+            or self._scale.process_queue_task.done()
+        ):
+            _LOGGER.info(
+                "%s: process_queue task not running or completed. Restarting.",
+                self.name,
+            )
+            if self._scale.process_queue_task and self._scale.process_queue_task.done():
+                try:
+                    if ex := self._scale.process_queue_task.exception():
+                        _LOGGER.warning(
+                            "%s: Previous process_queue task ended with exception: %s",
+                            self.name,
+                            ex,
+                        )
+                except asyncio.CancelledError:
+                    _LOGGER.debug(
+                        "%s: Previous process_queue task was cancelled.", self.name
+                    )
+
+            self._scale.process_queue_task = (
+                self.config_entry.async_create_background_task(
+                    hass=self.hass,
+                    target=self._scale.process_queue(),  # type: ignore[no-untyped-call]
+                    name="bookoo_process_queue_task",
+                )
+            )
+            _LOGGER.debug("%s: process_queue background task (re)started.", self.name)
+
+    async def _attempt_bookoo_connection(self) -> None:
+        """Attempts to connect to the Bookoo scale if not already connected.
+        Raises exceptions on failure.
+        """
+        if self._scale.connected:
+            return
+
+        _LOGGER.info("%s: Scale not connected, attempting to connect.", self.name)
+        try:
+            # Use a timeout for the connection attempt itself
+            async with asyncio.timeout(self.bookoo_config.connect_timeout):
+                connected_successfully = await self._scale.async_connect()  # type: ignore[attr-defined] # MyPy error: async_connect
+
+            if not connected_successfully:
+                _LOGGER.warning(
+                    "%s: Failed to connect to scale (async_connect returned False).",
+                    self.name,
+                )
+                # This specific condition is treated as a timeout for consistency in error handling
+                raise asyncio.TimeoutError(
+                    "Connection attempt failed (async_connect returned False)"
+                )
+
+            _LOGGER.info("%s: Successfully connected to scale.", self.name)
+            # Defensive check, though async_connect returning True should mean connected.
+            if not self._scale.connected:
+                _LOGGER.error(
+                    "%s: async_connect reported success but scale.connected is False.",
+                    self.name,
+                )
+                # This indicates an inconsistency, treat as a BookooError.
+                raise BookooError(
+                    "Scale connection state inconsistent after async_connect."
+                )
+
+        except asyncio.TimeoutError as err:
+            _LOGGER.warning(
+                "%s: Timeout connecting to Bookoo scale: %s", self.name, err
+            )
+            # Ensure scale is marked as not connected on timeout
+            if hasattr(self._scale, "connected"):  # Check if mock has 'connected'
+                self._scale.connected = False  # type: ignore[assignment] # For mocks
+            raise  # Re-raise to be caught by _async_update_data
+        except BookooError as err:
+            _LOGGER.warning("%s: Error connecting to Bookoo scale: %s", self.name, err)
+            if hasattr(self._scale, "connected"):
+                self._scale.connected = False  # type: ignore[assignment]
+            raise  # Re-raise
+        except Exception as err:
+            _LOGGER.exception(
+                "%s: Unexpected error during Bookoo scale connection: %s",
+                self.name,
+                err,
+            )
+            if hasattr(self._scale, "connected"):
+                self._scale.connected = False  # type: ignore[assignment]
+            raise BookooError(f"Unexpected error connecting to scale: {err}") from err
+
     async def async_close(self) -> None:
         """Close resources and disconnect the scale."""
         _LOGGER.debug("Closing BookooCoordinator resources for %s", self.name)
@@ -276,86 +433,89 @@ class BookooCoordinator(
         else:
             _LOGGER.debug("No scale object found to disconnect for %s.", self.name)
 
-        # Call super().async_close() to ensure DataUpdateCoordinator cleans up its resources
-        await super().async_close()
+        # Call super().async_shutdown() to ensure DataUpdateCoordinator cleans up its resources
+        await super().async_shutdown()
+
+    async def _ensure_scale_connected_and_processing(self) -> None:
+        """Ensure the scale is connected and its data processing queue is active.
+
+        Raises:
+            UpdateFailed: If connection or queue setup fails.
+            BookooDeviceNotFound: If the device is not found.
+            BookooError: For other Bookoo specific errors during connection.
+            asyncio.TimeoutError: If connection times out.
+        """
+        # Step 1: Attempt connection (will raise on failure)
+        # The _attempt_bookoo_connection method handles its own logging for various states.
+        await self._attempt_bookoo_connection()
+
+        # Step 2: If connection successful (i.e., no exception raised by step 1),
+        # ensure queue processor is running.
+        # _attempt_bookoo_connection should ensure self._scale.is_connected is True if it returns.
+        if not self._scale.connected:
+            # This path indicates an unexpected state if _attempt_bookoo_connection is supposed to always raise on failure.
+            _LOGGER.error(
+                "%s: Scale not connected after _attempt_bookoo_connection, but no exception was raised. This is unexpected.",
+                self.name,
+            )
+            raise UpdateFailed(
+                f"Bookoo scale {self.name} connection state inconsistent."
+            )
+
+        self._ensure_queue_processor_running()
+
+    def _handle_specific_update_exception(
+        self, err: Exception, error_message_prefix: str, disconnect_reason_suffix: str
+    ) -> None:
+        """Handles common logic for specific known exceptions during _async_update_data."""
+        _LOGGER.warning("%s: %s: %s", self.name, error_message_prefix, err)
+        if self.session_manager.is_shot_active:
+            self._handle_active_shot_disconnection(
+                f"{disconnect_reason_suffix}_during_update"
+            )
+        raise UpdateFailed(f"{error_message_prefix}: {err}") from err
 
     async def _async_update_data(self) -> None:
-        """Fetch data from the Bookoo scale, ensuring connection."""
-        try:
-            if not self._scale.is_connected:  # type: ignore[attr-defined]
-                _LOGGER.info(
-                    "%s: Scale not connected. Attempting to connect.", self.name
-                )
-                connected = await self._scale.async_connect()  # type: ignore[attr-defined]
-                if not connected:
-                    _LOGGER.warning("%s: Failed to connect to scale.", self.name)
-                    raise UpdateFailed(f"Failed to connect to Bookoo scale {self.name}")
-                _LOGGER.info("%s: Successfully connected to scale.", self.name)
+        """Fetch the latest data from the Bookoo scale.
 
-            if hasattr(self._scale, "process_queue") and (
-                not hasattr(self._scale, "process_queue_task")
-                or self._scale.process_queue_task is None  # type: ignore[attr-defined]
-                or self._scale.process_queue_task.done()  # type: ignore[attr-defined]
-            ):
-                _LOGGER.debug(
-                    "%s: Starting/restarting scale data processing queue task.",
-                    self.name,
-                )
-                self._scale.process_queue_task = (
-                    self.config_entry.async_create_background_task(
-                        hass=self.hass,
-                        target=self._scale.process_queue(),  # type: ignore[attr-defined]
-                        name="bookoo_process_queue_task",
-                    )
-                )
-        except BookooDeviceNotFound as ex:
-            _LOGGER.info("%s: Scale device not found during update: %s", self.name, ex)
-            if self._scale.is_connected:  # type: ignore[attr-defined] # Should ideally be false if device not found
-                try:
-                    await self._scale.async_disconnect()  # type: ignore[attr-defined]
-                except BookooError:
-                    pass
-            self._scale.is_connected = False  # type: ignore[attr-defined] # Ensure state is updated
-            if self.session_manager.is_shot_active:
-                self._handle_active_shot_disconnection("device_not_found_during_update")
-            raise UpdateFailed(f"Bookoo scale device not found: {ex}") from ex
-        except BookooError as ex:
-            _LOGGER.warning(
-                "%s: A Bookoo specific error occurred during update: %s", self.name, ex
+        This method is called by the DataUpdateCoordinator base class to refresh data.
+        It ensures the scale is connected and processes any queued updates.
+        Returns None as entities subscribe to updates rather than fetching data directly
+        from this method's return value.
+        Raises UpdateFailed on critical errors to signal HA.
+        """
+        _LOGGER.debug("%s: Attempting to update data from Bookoo scale.", self.name)
+        try:
+            await self._ensure_scale_connected_and_processing()
+            _LOGGER.debug(
+                "%s: Data update check complete. Scale connected and processing.",
+                self.name,
             )
-            if self.session_manager.is_shot_active:
-                self._handle_active_shot_disconnection("bookoo_error_during_update")
-            # Consider if this error implies disconnection
-            # if implies_disconnection(ex): self._scale.is_connected = False # type: ignore[attr-defined]
-            raise UpdateFailed(f"Bookoo error during update: {ex}") from ex
-        except TimeoutError as ex:
-            _LOGGER.warning("%s: Timeout during scale communication: %s", self.name, ex)
-            if self._scale.is_connected:  # type: ignore[attr-defined]
-                try:
-                    await self._scale.async_disconnect()  # type: ignore[attr-defined]
-                except BookooError:
-                    pass
-            self._scale.is_connected = False  # type: ignore[attr-defined]
-            if self.session_manager.is_shot_active:
-                self._handle_active_shot_disconnection("timeout_during_update")
-            raise UpdateFailed(f"Timeout communicating with Bookoo scale: {ex}") from ex
-        except Exception as ex:
-            if isinstance(
-                ex, UpdateFailed
-            ):  # If it's already an UpdateFailed, re-raise it directly
-                raise
-            _LOGGER.exception(
-                "%s: Unexpected error during data update: %s", self.name, ex
+        except BookooDeviceNotFound as err:
+            self._handle_specific_update_exception(
+                err, "Bookoo scale device not found", "device_not_found"
             )
-            if self._scale.is_connected:  # type: ignore[attr-defined] # Try to clean up connection
-                try:
-                    await self._scale.async_disconnect()  # type: ignore[attr-defined]
-                except BookooError:
-                    pass
-            self._scale.is_connected = False  # type: ignore[attr-defined]
+        except (
+            BookooError
+        ) as err:  # Catches specific Bookoo errors like connection issues
+            self._handle_specific_update_exception(
+                err, "Error communicating with Bookoo scale", "bookoo_error"
+            )
+        except asyncio.TimeoutError as err:  # Specifically for asyncio.TimeoutError
+            self._handle_specific_update_exception(
+                err, "Timeout connecting to Bookoo scale", "timeout"
+            )
+        except Exception as err:  # Catch-all for other unexpected errors
+            _LOGGER.exception(  # Keep full exception log for truly unexpected errors
+                "%s: Unexpected error updating Bookoo scale data: %s", self.name, err
+            )
             if self.session_manager.is_shot_active:
                 self._handle_active_shot_disconnection("unexpected_error_during_update")
-            raise UpdateFailed(f"Unexpected error updating Bookoo data: {ex}") from ex
+            # Ensure we always raise UpdateFailed for the coordinator's error handling
+            if isinstance(err, UpdateFailed):  # If it's already UpdateFailed, re-raise
+                raise
+            raise UpdateFailed(f"Unexpected error updating Bookoo data: {err}") from err
+        # This return is only reached if the try block completes successfully.
 
     # Service call handlers
     async def async_start_shot_service(self, call: ServiceCall) -> None:

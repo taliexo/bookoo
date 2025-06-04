@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -14,11 +15,8 @@ from .storage import async_add_shot_record
 from .types import (
     BookooShotCompletedEventDataModel,  # Changed from TypedDict to Pydantic Model
     FlowDataPoint,
-    FlowProfile,
     ScaleTimerDataPoint,
-    ScaleTimerProfile,
     WeightDataPoint,
-    WeightProfile,
 )
 
 if TYPE_CHECKING:
@@ -29,6 +27,8 @@ if TYPE_CHECKING:
     from .coordinator import BookooCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+MAX_PROFILE_POINTS = 3000  # Max data points for session profiles (e.g., 5 mins at 10Hz)
 
 
 class SessionManager:
@@ -41,9 +41,15 @@ class SessionManager:
 
         self.is_shot_active: bool = False
         self.session_start_time_utc: datetime | None = None
-        self.session_flow_profile: FlowProfile = []
-        self.session_weight_profile: WeightProfile = []
-        self.session_scale_timer_profile: ScaleTimerProfile = []
+        self.session_flow_profile: collections.deque[FlowDataPoint] = collections.deque(
+            maxlen=MAX_PROFILE_POINTS
+        )
+        self.session_weight_profile: collections.deque[WeightDataPoint] = (
+            collections.deque(maxlen=MAX_PROFILE_POINTS)
+        )
+        self.session_scale_timer_profile: collections.deque[ScaleTimerDataPoint] = (
+            collections.deque(maxlen=MAX_PROFILE_POINTS)
+        )
         self.session_input_parameters: dict[str, Any] = {}
         self.session_start_trigger: str | None = None
         self.last_shot_data: BookooShotCompletedEventDataModel | None = (
@@ -54,15 +60,19 @@ class SessionManager:
         """Internal helper to reset session-specific state variables."""
         self.is_shot_active = False
         self.session_start_time_utc = None
-        self.session_flow_profile = []
-        self.session_weight_profile = []
-        self.session_scale_timer_profile = []
+        self.session_flow_profile = collections.deque(maxlen=MAX_PROFILE_POINTS)
+        self.session_weight_profile = collections.deque(maxlen=MAX_PROFILE_POINTS)
+        self.session_scale_timer_profile = collections.deque(maxlen=MAX_PROFILE_POINTS)
         self.session_input_parameters = {}
         self.session_start_trigger = None
         # self.last_shot_data is intentionally not cleared here
 
     async def start_session(self, trigger: str) -> None:
-        """Starts a new shot session."""
+        """Starts a new shot session.
+
+        Args:
+            trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
+        """
         # This block was incorrectly modified by the previous tool call and is being reverted/ignored.
         # The actual target for the first model_dump is later in the stop_session method.
 
@@ -130,34 +140,18 @@ class SessionManager:
         # Coordinator will handle resetting its own realtime analytics and updating listeners
         self.coordinator.async_update_listeners()  # Notify HA of state change (shot active)
 
-    async def stop_session(self, stop_reason: str) -> None:
-        """Stops the current shot session, calculates metrics, and fires event."""
-        if not self.is_shot_active or not self.session_start_time_utc:
-            _LOGGER.debug(
-                "%s: Stop session called but no active session or start time found.",
-                self.coordinator.name,
-            )
-            return
-
-        current_session_start_time_utc = self.session_start_time_utc
-        current_time = dt_util.utcnow()
+    def _determine_shot_status_and_duration(
+        self,
+        stop_reason: str,
+        current_session_start_time_utc: datetime,
+        current_time: datetime,
+    ) -> tuple[str, float]:
+        """Determines the shot status and duration."""
         duration_seconds = (
             current_time - current_session_start_time_utc
         ).total_seconds()
-        _LOGGER.info(
-            "%s: Stopping shot session (reason: %s). Duration: %.2f seconds.",
-            self.coordinator.name,
-            stop_reason,
-            duration_seconds,
-        )
-
-        shot_status = "completed"
-        original_start_trigger = self.session_start_trigger
-        original_input_params = dict(self.session_input_parameters)
-        original_start_time_utc_iso = current_session_start_time_utc.isoformat()
-
-        # Access min_shot_duration from coordinator's BookooConfig
         min_duration = self.coordinator.bookoo_config.min_shot_duration
+        shot_status = "completed"
 
         if stop_reason == "disconnected":
             shot_status = "aborted_disconnected"
@@ -172,181 +166,288 @@ class SessionManager:
                 min_duration,
             )
             shot_status = "aborted_too_short"
+        return shot_status, duration_seconds
 
-            raw_event_data: dict[str, Any] = {
-                "device_id": self.coordinator.config_entry.unique_id
-                or self.coordinator.config_entry.entry_id,
-                "entry_id": self.coordinator.config_entry.entry_id,
-                "start_time_utc": original_start_time_utc_iso,
-                "end_time_utc": current_time.isoformat(),
-                "duration_seconds": round(duration_seconds, 2),
-                "status": shot_status,
-                "start_trigger": original_start_trigger,
-                "stop_reason": stop_reason,
-                "input_parameters": original_input_params,
-                "final_weight_grams": 0.0,
-                "flow_profile": [],  # Minimal data for aborted short shot
-                "scale_timer_profile": [],  # Minimal data
-                "average_flow_rate_gps": 0.0,
-                "peak_flow_rate_gps": 0.0,
-                "time_to_first_flow_seconds": None,
-                "time_to_peak_flow_seconds": None,
-                "channeling_status": self.coordinator.realtime_channeling_status,
-                "pre_infusion_detected": self.coordinator.realtime_pre_infusion_active,
-                "pre_infusion_duration_seconds": self.coordinator.realtime_pre_infusion_duration,
-                "extraction_uniformity_metric": self.coordinator.realtime_extraction_uniformity,
-                "shot_quality_score": round(
-                    self.coordinator.realtime_shot_quality_score, 1
-                )
-                if self.coordinator.realtime_shot_quality_score is not None
-                else None,
-            }
-            try:
-                validated_event_data = BookooShotCompletedEventDataModel(
-                    **raw_event_data
-                )
-                self.last_shot_data = validated_event_data
-                self.coordinator.last_shot_data = validated_event_data.model_copy(
-                    deep=True
-                )
-            except ValidationError as e:
-                _LOGGER.error(
-                    "%s: Shot data validation failed for aborted_too_short: %s. Data: %s",
-                    self.coordinator.name,
-                    e,
-                    raw_event_data,
-                )
-                # Decide how to handle: maybe return, or fire a minimal error event
-                self._reset_internal_session_state()
-                self.coordinator.async_update_listeners()
-                return
+    def _prepare_minimal_shot_data(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Prepares a minimal data dictionary for aborted shots."""
+        return {
+            "device_id": self.coordinator.config_entry.unique_id
+            or self.coordinator.config_entry.entry_id,
+            "entry_id": self.coordinator.config_entry.entry_id,
+            "start_time_utc": context["original_start_time_utc_iso"],
+            "end_time_utc": context["current_time_iso"],
+            "duration_seconds": round(context["duration_seconds"], 2),
+            "status": context["shot_status"],
+            "start_trigger": context["original_start_trigger"],
+            "stop_reason": context["stop_reason"],
+            "input_parameters": context["original_input_params"],
+            "final_weight_grams": 0.0,
+            "flow_profile": [],
+            "scale_timer_profile": [],
+            "average_flow_rate_gps": 0.0,
+            "peak_flow_rate_gps": 0.0,
+            "time_to_first_flow_seconds": None,
+            "time_to_peak_flow_seconds": None,
+            "channeling_status": self.coordinator.realtime_channeling_status,
+            "pre_infusion_detected": self.coordinator.realtime_pre_infusion_active,
+            "pre_infusion_duration_seconds": self.coordinator.realtime_pre_infusion_duration,
+            "extraction_uniformity_metric": self.coordinator.realtime_extraction_uniformity,
+            "shot_quality_score": round(
+                self.coordinator.realtime_shot_quality_score or 0.0, 1
+            ),
+            "weight_profile": [],  # Added for completeness, though minimal
+        }
 
+    def _calculate_shot_analytics(
+        self,
+    ) -> dict[str, Any]:
+        """Calculates detailed analytics for a completed shot."""
+        # analyzer = self.coordinator.shot_analyzer # Not used for now as methods are missing
+        final_weight = (
+            self.session_weight_profile[-1][1] if self.session_weight_profile else 0.0
+        )
+        # avg_flow = analyzer.calculate_average_flow_rate(list(self.session_flow_profile))
+        # peak_flow = analyzer.calculate_peak_flow_rate(list(self.session_flow_profile))
+        # time_to_first_flow = analyzer.calculate_time_to_first_flow(
+        #     list(self.session_flow_profile)
+        # )
+        # time_to_peak_flow = analyzer.calculate_time_to_peak_flow(
+        #     list(self.session_flow_profile)
+        # )
+        return {
+            "final_weight_grams": round(final_weight, 2),
+            "average_flow_rate_gps": 0.0,  # Default due to missing ShotAnalyzer method
+            "peak_flow_rate_gps": 0.0,  # Default due to missing ShotAnalyzer method
+            "time_to_first_flow_seconds": None,  # Default due to missing ShotAnalyzer method
+            "time_to_peak_flow_seconds": None,  # Default due to missing ShotAnalyzer method
+        }
+
+    def _prepare_completed_shot_data(
+        self, analytics: dict[str, Any], context: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Prepares a full data dictionary for completed shots."""
+        return {
+            "device_id": self.coordinator.config_entry.unique_id
+            or self.coordinator.config_entry.entry_id,
+            "entry_id": self.coordinator.config_entry.entry_id,
+            "start_time_utc": context["original_start_time_utc_iso"],
+            "end_time_utc": context["current_time_iso"],
+            "duration_seconds": round(context["duration_seconds"], 2),
+            "status": context["shot_status"],
+            "start_trigger": context["original_start_trigger"],
+            "stop_reason": context["stop_reason"],
+            "input_parameters": context["original_input_params"],
+            "final_weight_grams": analytics["final_weight_grams"],
+            "flow_profile": [
+                datapoint._asdict() for datapoint in self.session_flow_profile
+            ],
+            "scale_timer_profile": [
+                datapoint._asdict() for datapoint in self.session_scale_timer_profile
+            ],
+            "weight_profile": [
+                datapoint._asdict() for datapoint in self.session_weight_profile
+            ],
+            "average_flow_rate_gps": analytics.get(
+                "average_flow_rate_gps", 0.0
+            ),  # Use .get with default
+            "peak_flow_rate_gps": analytics.get(
+                "peak_flow_rate_gps", 0.0
+            ),  # Use .get with default
+            "time_to_first_flow_seconds": analytics.get(
+                "time_to_first_flow_seconds"
+            ),  # Use .get with default (None)
+            "time_to_peak_flow_seconds": analytics.get(
+                "time_to_peak_flow_seconds"
+            ),  # Use .get with default (None)
+            "channeling_status": self.coordinator.realtime_channeling_status,
+            "pre_infusion_detected": self.coordinator.realtime_pre_infusion_active,
+            "pre_infusion_duration_seconds": self.coordinator.realtime_pre_infusion_duration,
+            "extraction_uniformity_metric": self.coordinator.realtime_extraction_uniformity,
+            "shot_quality_score": round(
+                self.coordinator.realtime_shot_quality_score or 0.0, 1
+            ),
+        }
+
+    def _calculate_final_shot_metrics(
+        self,
+        duration_seconds: float,
+        final_weight_grams: float,
+        flow_profile: collections.deque[FlowDataPoint],
+    ) -> dict[str, Any]:
+        """Calculates final metrics for a completed shot."""
+        metrics: dict[str, Any] = {
+            "average_flow_rate_gps": 0.0,
+            "peak_flow_rate_gps": 0.0,
+            "time_to_peak_flow_seconds": None,
+            "time_to_first_flow_seconds": None,
+        }
+
+        if duration_seconds > 0 and final_weight_grams > 0:
+            metrics["average_flow_rate_gps"] = round(
+                final_weight_grams / duration_seconds, 2
+            )
+
+        if flow_profile:
+            # Peak flow
+            # Ensure there are points with flow_rate > 0.01 before calling max()
+            valid_flow_points = [dp for dp in flow_profile if dp.flow_rate > 0.01]
+            if valid_flow_points:
+                peak_flow_dp = max(valid_flow_points, key=lambda item: item.flow_rate)
+                metrics["time_to_peak_flow_seconds"] = round(
+                    peak_flow_dp.elapsed_time, 2
+                )
+                metrics["peak_flow_rate_gps"] = round(peak_flow_dp.flow_rate, 2)
+            # If no valid_flow_points, peak_flow_rate_gps remains 0.0 as initialized
+
+            # Time to first flow
+            FIRST_FLOW_THRESHOLD_GPS = 0.2
+            for dp in flow_profile:
+                if dp.flow_rate > FIRST_FLOW_THRESHOLD_GPS:
+                    metrics["time_to_first_flow_seconds"] = round(dp.elapsed_time, 2)
+                    break
+        return metrics
+
+    async def _finalize_and_store_shot(
+        self, raw_event_data: dict[str, Any], shot_status: str
+    ) -> None:
+        """Validates, stores, and dispatches the shot data."""
+        try:
+            validated_shot_data = BookooShotCompletedEventDataModel(
+                **dict(raw_event_data)
+            )
+            self.last_shot_data = validated_shot_data
+            _LOGGER.debug(
+                "%s: Shot data prepared for event and storage: %s",
+                self.coordinator.name,
+                validated_shot_data.model_dump(
+                    mode="json"
+                ),  # Use model_dump for Pydantic models
+            )
+
+            # Fire Home Assistant event
+            self.hass.bus.async_fire(
+                f"{self.coordinator.config_entry.domain}_shot_completed",
+                validated_shot_data.model_dump(mode="json"),
+            )
+
+            # Store shot record if not aborted as too short (or always store, depending on preference)
+            # Current logic implies aborted_too_short also gets stored with minimal data.
+            validated_data_for_storage: BookooShotCompletedEventDataModel = (
+                validated_shot_data
+            )
+            await async_add_shot_record(self.hass, validated_data_for_storage)
             _LOGGER.info(
-                "%s: Attempting to save 'aborted_too_short' shot record to SQLite.",
+                "%s: Shot (status: %s) data stored and event fired.",
+                self.coordinator.name,
+                shot_status,
+            )
+
+        except ValidationError as e:
+            _LOGGER.error(
+                "%s: Validation error preparing shot data: %s. Raw data: %s",
+                self.coordinator.name,
+                e,
+                raw_event_data,
+                exc_info=True,
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.error(
+                "%s: Unexpected error finalizing shot: %s",
+                self.coordinator.name,
+                e,
+                exc_info=True,
+            )
+
+    async def stop_session(self, stop_reason: str) -> None:
+        """Stops the current shot session, calculates metrics, stores data, and fires an event.
+
+        Args:
+            stop_reason: A string describing why the shot was stopped (e.g., 'service', 'disconnected', 'auto_flow_cutoff').
+        """
+        if not self.is_shot_active or not self.session_start_time_utc:
+            _LOGGER.debug(
+                "%s: Stop session called but no active session or start time found.",
                 self.coordinator.name,
             )
-            assert self.last_shot_data is not None  # Help mypy with type narrowing
-            await async_add_shot_record(self.hass, self.last_shot_data.model_dump())
-
-            self._reset_internal_session_state()
-            self.coordinator._reset_realtime_analytics()  # Reset analytics on coordinator
-            self.coordinator.async_update_listeners()
             return
+
+        current_session_start_time_utc = self.session_start_time_utc
+        current_time = dt_util.utcnow()
+
+        shot_status, duration_seconds = self._determine_shot_status_and_duration(
+            stop_reason, current_session_start_time_utc, current_time
+        )
+
+        _LOGGER.info(
+            "%s: Stopping shot session (reason: %s). Status: %s. Duration: %.2f seconds.",
+            self.coordinator.name,
+            stop_reason,
+            shot_status,
+            duration_seconds,
+        )
+
+        # Prepare base data for the event
+        start_time_iso = current_session_start_time_utc.isoformat()
+        end_time_iso = current_time.isoformat()
+
+        raw_event_data: dict[str, Any] = {
+            "device_id": self.coordinator.config_entry.unique_id
+            or self.coordinator.config_entry.entry_id,
+            "unique_shot_id": f"{start_time_iso}_{self.coordinator.config_entry.unique_id or self.coordinator.config_entry.entry_id}",
+            "start_time_utc": start_time_iso,
+            "end_time_utc": end_time_iso,
+            "duration_seconds": duration_seconds,
+            "status": shot_status,
+            "start_trigger": self.session_start_trigger,
+            "stop_reason": stop_reason,
+            "input_parameters": dict(self.session_input_parameters),
+        }
 
         final_weight_grams = (
             self.coordinator.scale.weight
             if self.coordinator.scale.weight is not None
             else 0.0
         )
+        raw_event_data["final_weight_grams"] = round(final_weight_grams, 2)
 
-        average_flow_rate_gps = 0.0
-        if duration_seconds > 0 and final_weight_grams > 0:
-            average_flow_rate_gps = round(final_weight_grams / duration_seconds, 2)
+        if shot_status == "aborted_too_short":
+            # For aborted shots, the base raw_event_data is likely sufficient.
+            # If _prepare_minimal_shot_data was intended to add more specific keys for aborted shots,
+            # it could be called here and its result merged into raw_event_data.
+            # Example: raw_event_data.update(self._prepare_minimal_shot_data(raw_event_data.copy()))
+            pass
+        else:
+            # For completed or other non-aborted_too_short statuses
+            analytics = self._calculate_shot_analytics()
+            raw_event_data.update(analytics)
 
-        peak_flow_rate_gps = 0.0
-        time_to_peak_flow_seconds = None
-        if self.session_flow_profile:
-            valid_flow_points = [
-                dp for dp in self.session_flow_profile if dp.flow_rate > 0.01
-            ]
-            if valid_flow_points:
-                peak_flow_dp = max(
-                    valid_flow_points,
-                    key=lambda item: item.flow_rate,
-                )
-                time_to_peak_flow_seconds = round(peak_flow_dp.elapsed_time, 2)
-                peak_flow_rate_gps = round(peak_flow_dp.flow_rate, 2)
-            elif (
-                self.session_flow_profile
-            ):  # if no valid_flow_points but profile exists
-                peak_flow_rate_gps = 0.0
-
-        time_to_first_flow_seconds = None
-        FIRST_FLOW_THRESHOLD_GPS = 0.2
-        if self.session_flow_profile:
-            for dp in self.session_flow_profile:
-                if dp.flow_rate > FIRST_FLOW_THRESHOLD_GPS:
-                    time_to_first_flow_seconds = round(dp.elapsed_time, 2)
-                    break
-
-        # TODO: Add auto-stop logic here if applicable, it might change stop_reason and shot_status
-        # This would involve checking flow rate stability and cutoff based on coordinator options.
-        # Example:
-        # if self.coordinator.config_entry.options.get(OPTION_ENABLE_AUTO_STOP_FLOW_CUTOFF):
-        #     is_auto_stopped, auto_stop_details = self._check_auto_stop_conditions()
-        #     if is_auto_stopped:
-        #         stop_reason = "auto_flow_cutoff"
-        #         # Potentially update other metrics based on auto-stop
-
-        raw_event_data = {
-            "device_id": self.coordinator.config_entry.unique_id
-            or self.coordinator.config_entry.entry_id,
-            "entry_id": self.coordinator.config_entry.entry_id,
-            "start_time_utc": original_start_time_utc_iso,
-            "end_time_utc": current_time.isoformat(),
-            "duration_seconds": round(duration_seconds, 2),
-            "status": shot_status,
-            "start_trigger": original_start_trigger,
-            "stop_reason": stop_reason,
-            "final_weight_grams": round(final_weight_grams, 2),
-            "flow_profile": self.session_flow_profile,
-            "scale_timer_profile": self.session_scale_timer_profile,
-            "input_parameters": original_input_params,
-            "channeling_status": self.coordinator.realtime_channeling_status,
-            "pre_infusion_detected": self.coordinator.realtime_pre_infusion_active,
-            "pre_infusion_duration_seconds": self.coordinator.realtime_pre_infusion_duration,
-            "extraction_uniformity_metric": self.coordinator.realtime_extraction_uniformity,
-            "average_flow_rate_gps": average_flow_rate_gps,
-            "peak_flow_rate_gps": peak_flow_rate_gps,
-            "time_to_first_flow_seconds": time_to_first_flow_seconds,
-            "time_to_peak_flow_seconds": time_to_peak_flow_seconds,
-            "shot_quality_score": round(self.coordinator.realtime_shot_quality_score, 1)
-            if self.coordinator.realtime_shot_quality_score is not None
-            else None,
-        }
-        try:
-            validated_event_data = BookooShotCompletedEventDataModel(**raw_event_data)
-            self.last_shot_data = validated_event_data
-            self.coordinator.last_shot_data = validated_event_data.model_copy(deep=True)
-        except ValidationError as e:
-            _LOGGER.error(
-                "%s: Shot data validation failed for completed shot: %s. Data: %s",
-                self.coordinator.name,
-                e,
-                raw_event_data,
+            final_summary_metrics = self._calculate_final_shot_metrics(
+                duration_seconds, final_weight_grams, self.session_flow_profile
             )
-            # Decide how to handle: maybe return, or fire a minimal error event
-            self._reset_internal_session_state()
-            self.coordinator.async_update_listeners()
-            return
+            raw_event_data.update(final_summary_metrics)
 
-        logged_event_data = {}
-        if self.coordinator.last_shot_data:  # Ensure it's not None
-            logged_event_data = {
-                k: v
-                for k, v in self.coordinator.last_shot_data.model_dump().items()
-                if k not in ["flow_profile", "scale_timer_profile"]
-            }
-        _LOGGER.info(
-            "%s: Fired EVENT_BOOKOO_SHOT_COMPLETED with (logged) data: %s",
-            self.coordinator.name,
-            logged_event_data,
-        )
+            raw_event_data["flow_profile"] = list(self.session_flow_profile)
+            raw_event_data["weight_profile"] = list(self.session_weight_profile)
+            raw_event_data["scale_timer_profile"] = list(
+                self.session_scale_timer_profile
+            )
 
-        _LOGGER.info(
-            "%s: Attempting to save shot record to SQLite using validated event data.",
-            self.coordinator.name,
-        )
-        assert self.coordinator.last_shot_data is not None  # Help mypy
-        await async_add_shot_record(
-            self.hass, self.coordinator.last_shot_data.model_dump()
-        )
+        # TODO: Re-evaluate auto-stop logic if it needs to modify shot_status or other metrics
+        # before they are finalized in raw_event_data.
+
+        await self._finalize_and_store_shot(raw_event_data, shot_status)
 
         self._reset_internal_session_state()
-        self.coordinator._reset_realtime_analytics()  # Reset analytics on coordinator
+        self.coordinator._reset_realtime_analytics()
         self.coordinator.async_update_listeners()
 
     def add_flow_data(self, elapsed_time: float, flow_rate: float) -> None:
+        """Adds a flow rate data point to the current session's profile.
+
+        Args:
+            elapsed_time: The time in seconds since the shot started.
+            flow_rate: The calculated flow rate in g/s.
+        """
         """Adds a flow rate data point to the current session."""
         if self.is_shot_active:
             self.session_flow_profile.append(
@@ -354,6 +455,12 @@ class SessionManager:
             )
 
     def add_weight_data(self, elapsed_time: float, weight: float) -> None:
+        """Adds a weight data point to the current session's profile.
+
+        Args:
+            elapsed_time: The time in seconds since the shot started.
+            weight: The current weight reading in grams.
+        """
         """Adds a weight data point to the current session."""
         if self.is_shot_active:
             self.session_weight_profile.append(
@@ -361,6 +468,12 @@ class SessionManager:
             )
 
     def add_scale_timer_data(self, elapsed_time: float, timer_value: int) -> None:
+        """Adds a scale timer data point to the current session's profile.
+
+        Args:
+            elapsed_time: The time in seconds since the shot started.
+            timer_value: The timer value from the scale in seconds.
+        """
         """Adds a scale timer data point to the current session."""
         if self.is_shot_active:
             self.session_scale_timer_profile.append(

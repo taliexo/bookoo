@@ -46,7 +46,7 @@ def mock_scale(mock_config_entry: MagicMock) -> MagicMock:
     scale.name = PropertyMock(return_value=f"Bookoo {scale.mac}")
     scale.model = PropertyMock(return_value="TestModel")
     scale.connected = PropertyMock(return_value=False)
-    scale.is_connected = PropertyMock(return_value=False)
+    scale.connected = PropertyMock(return_value=False)
     scale.weight = PropertyMock(return_value=0.0)
     scale.flow_rate = PropertyMock(return_value=0.0)
     scale.timer = PropertyMock(return_value=0.0)
@@ -64,6 +64,7 @@ def mock_scale(mock_config_entry: MagicMock) -> MagicMock:
     # For example, if process_queue is an async generator, its mock might need special setup.
     # If it's a simple async method that returns None:
     scale.process_queue.return_value = None
+    scale.process_queue_task = None  # Initialize as None, like in the actual class
 
     return scale
 
@@ -77,24 +78,19 @@ async def coordinator(
 ) -> BookooCoordinator:
     """Mock BookooCoordinator instance."""
 
-    # Explicitly resolve the hass async_generator fixture
-    # The type hint 'HomeAssistant' for 'hass' parameter refers to the *yielded type*.
-    # The object received can be the generator itself in some pytest-asyncio contexts.
-    actual_hass = await anext(hass)  # type: ignore[type-var]
-
     mocker.patch(
         "custom_components.bookoo.coordinator.BookooScale", return_value=mock_scale
     )
 
     # Assuming BookooCoordinator.__init__ is synchronous.
-    coord = BookooCoordinator(actual_hass, mock_config_entry)
+    coord = BookooCoordinator(hass, mock_config_entry)
 
     # Mock async_config_entry_first_refresh. Tests can await this if they call it.
-    coord.async_config_entry_first_refresh = AsyncMock()
+    coord.async_config_entry_first_refresh = AsyncMock()  # type: ignore[method-assign]
 
     # Store the coordinator in actual_hass.data.
-    actual_hass.data.setdefault(DOMAIN, {})
-    actual_hass.data[DOMAIN][mock_config_entry.entry_id] = coord
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][mock_config_entry.entry_id] = coord
     mock_config_entry.runtime_data = coord
 
     return coord

@@ -35,6 +35,10 @@ OPTION_AUTO_STOP_MIN_DURATION_FOR_STABILITY = (
 OPTION_AUTO_STOP_FLOW_CUTOFF_THRESHOLD = "auto_stop_flow_cutoff_threshold_gps"
 OPTION_AUTO_STOP_MIN_DURATION_FOR_CUTOFF = "auto_stop_min_duration_for_cutoff_seconds"
 
+# Bluetooth Timeout Option Keys
+OPTION_CONNECT_TIMEOUT = "bluetooth_connect_timeout_seconds"
+OPTION_COMMAND_TIMEOUT = "bluetooth_command_timeout_seconds"
+
 
 # Default values for auto-stop, if not configured
 DEFAULT_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION = 5.0  # seconds
@@ -43,6 +47,10 @@ DEFAULT_AUTO_STOP_MAX_FLOW_VARIANCE_FOR_STABILITY = 20.0  # percent (e.g., 0.20 
 DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY = 3.0  # seconds
 DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD = 0.2  # g/s
 DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF = 1.0  # seconds
+
+# Default values for Bluetooth timeouts
+DEFAULT_CONNECT_TIMEOUT = 15.0  # seconds
+DEFAULT_COMMAND_TIMEOUT = 10.0  # seconds
 
 
 @dataclass(frozen=True)
@@ -62,6 +70,10 @@ class BookooConfig:
     auto_stop_min_duration_for_stability: float
     auto_stop_flow_cutoff_threshold: float
     auto_stop_min_duration_for_cutoff: float
+
+    # Bluetooth Timeouts
+    connect_timeout: float
+    command_timeout: float
 
     @classmethod
     def from_config_entry(cls, entry: ConfigEntry) -> "BookooConfig":
@@ -97,6 +109,14 @@ class BookooConfig:
             auto_stop_min_duration_for_cutoff=options.get(
                 OPTION_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
                 DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
+            ),
+            connect_timeout=options.get(
+                OPTION_CONNECT_TIMEOUT,
+                DEFAULT_CONNECT_TIMEOUT,
+            ),
+            command_timeout=options.get(
+                OPTION_COMMAND_TIMEOUT,
+                DEFAULT_COMMAND_TIMEOUT,
             ),
         )
 
