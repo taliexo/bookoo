@@ -1,12 +1,12 @@
 """Initialize the Bookoo component."""
 
-from homeassistant.core import HomeAssistant
 import typing
 
-from .storage import async_init_db
+from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, SERVICE_START_SHOT, SERVICE_STOP_SHOT, PLATFORMS
+from .const import DOMAIN, PLATFORMS, SERVICE_START_SHOT, SERVICE_STOP_SHOT
 from .coordinator import BookooConfigEntry, BookooCoordinator
+from .storage import async_init_db
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bool:

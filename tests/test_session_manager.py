@@ -1,38 +1,40 @@
 """Tests for the SessionManager class in Bookoo integration."""
 
+import asyncio
+import logging
+from dataclasses import replace
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import pytest_asyncio
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
-from dataclasses import replace
-import logging
+from aiobookoov2.bookooscale import BookooScale  # For type hinting mock
+from homeassistant.config_entries import ConfigEntry  # For type hinting mock
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from pydantic import ValidationError
 
-from custom_components.bookoo.session_manager import SessionManager
+from custom_components.bookoo.const import (
+    DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
+    DEFAULT_AUTO_STOP_MAX_FLOW_VARIANCE_FOR_STABILITY,
+    DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
+    DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
+    DEFAULT_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
+    DEFAULT_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION,
+    EVENT_BOOKOO_SHOT_COMPLETED,
+    BookooConfig,
+)
 from custom_components.bookoo.coordinator import (
     BookooCoordinator,
-)  # For type hinting mock
-from custom_components.bookoo.const import (
-    BookooConfig,
-    EVENT_BOOKOO_SHOT_COMPLETED,
-    DEFAULT_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION,
-    DEFAULT_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
-    DEFAULT_AUTO_STOP_MAX_FLOW_VARIANCE_FOR_STABILITY,
-    DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
-    DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
-    DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
 )
+
+# For type hinting mock
+from custom_components.bookoo.session_manager import SessionManager
 from custom_components.bookoo.types import (
     BookooShotCompletedEventDataModel,
     FlowDataPoint,
-    WeightDataPoint,
     ScaleTimerDataPoint,
+    WeightDataPoint,
 )
-
-from aiobookoov2.bookooscale import BookooScale  # For type hinting mock
-from pydantic import ValidationError
-from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
-from homeassistant.config_entries import ConfigEntry  # For type hinting mock
 
 # Configure basic logging for tests if needed
 # logging.basicConfig(level=logging.DEBUG)
@@ -105,7 +107,7 @@ def mock_coordinator_session_manager(
     coordinator.bookoo_config = bookoo_config_default
     coordinator.scale = mock_scale_session_manager
     coordinator.name = "TestBookooSMDevice"
-    coordinator.async_update_listeners = AsyncMock()
+    coordinator.async_update_listeners = MagicMock()  # Real method is not async
     # Initialize real-time analytics attributes that SessionManager might read/rely on
     coordinator.realtime_channeling_status = "Undetermined"
     coordinator.realtime_pre_infusion_active = False

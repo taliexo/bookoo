@@ -1,0 +1,11 @@
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "PL", "PTH"]
+ignore = [
+    "E501",    # Ignore line too long, handled by formatter
+    "PLR2004", # Ignore magic value comparisons, especially in tests
+    "PLR0912", # Ignore too-many-branches
+    "PLR0915", # Ignore too-many-statements
+]

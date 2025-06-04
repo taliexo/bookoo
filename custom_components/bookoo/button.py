@@ -4,20 +4,23 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
-# from aiobookoo.bookooscale import BookooScale # No longer directly needed by press_fn type hint
-from .coordinator import BookooCoordinator  # Import coordinator for press_fn type hint
-
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import BookooConfigEntry  # Ensure BookooCoordinator is imported
-from .entity import BookooEntity
 from .const import (
     DOMAIN,
     SERVICE_START_SHOT,
     SERVICE_STOP_SHOT,
-)  # Added for service calls
+)
+
+# Added for service calls
+# from aiobookoo.bookooscale import BookooScale # No longer directly needed by press_fn type hint
+from .coordinator import (
+    BookooConfigEntry,  # Ensure BookooCoordinator is imported
+    BookooCoordinator,  # Import coordinator for press_fn type hint
+)
+from .entity import BookooEntity
 
 PARALLEL_UPDATES = 0
 

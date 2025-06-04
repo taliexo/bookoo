@@ -233,7 +233,7 @@ class BookooSensor(SensorEntity, BookooEntity):
         # or BookooDynamicUnitSensorEntityDescription but unit_fn is None.
         # Explicitly cast the type for mypy
         return typing.cast(
-            typing.Optional[str], self.entity_description.native_unit_of_measurement
+            str | None, self.entity_description.native_unit_of_measurement
         )
 
     @property

@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
-from typing import Optional, TypeAlias  # For Optional type hint and TypeAlias
+from datetime import datetime, timedelta, timezone
+from typing import TypeAlias  # For Optional type hint and TypeAlias
 
+from aiobookoov2.bookooscale import BookooScale
 from aiobookoov2.const import (
     UPDATE_SOURCE_COMMAND_CHAR,
     UPDATE_SOURCE_WEIGHT_CHAR,
 )
-from aiobookoov2.bookooscale import BookooScale
 from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .analytics import ShotAnalyzer
+from .const import CONF_IS_VALID_SCALE, BookooConfig  # Assuming DOMAIN might be needed
 from .session_manager import SessionManager
 from .types import BookooShotCompletedEventDataModel
-from .const import BookooConfig, CONF_IS_VALID_SCALE  # Assuming DOMAIN might be needed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ class BookooCoordinator(
         )
 
         self.session_manager = SessionManager(hass, self)
-        self.last_shot_data: Optional[BookooShotCompletedEventDataModel] = None
+        self.last_shot_data: BookooShotCompletedEventDataModel | None = None
         self.shot_analyzer = ShotAnalyzer()
 
         # Real-time analytics attributes
@@ -249,6 +248,36 @@ class BookooCoordinator(
                 stop_reason=f"disconnected_{stop_reason_suffix}"
             )
         )
+
+    async def async_close(self) -> None:
+        """Close resources and disconnect the scale."""
+        _LOGGER.debug("Closing BookooCoordinator resources for %s", self.name)
+        if self._scale:
+            if self._scale.connected:
+                try:
+                    _LOGGER.debug(
+                        "Disconnecting scale %s during async_close", self.name
+                    )
+                    await self._scale.disconnect()
+                    _LOGGER.debug(
+                        "Scale %s disconnected successfully during async_close",
+                        self.name,
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Error disconnecting scale %s during async_close: %s",
+                        self.name,
+                        e,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Scale %s already disconnected, skipping disconnect.", self.name
+                )
+        else:
+            _LOGGER.debug("No scale object found to disconnect for %s.", self.name)
+
+        # Call super().async_close() to ensure DataUpdateCoordinator cleans up its resources
+        await super().async_close()
 
     async def _async_update_data(self) -> None:
         """Fetch data from the Bookoo scale, ensuring connection."""

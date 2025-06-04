@@ -2,32 +2,24 @@
 
 import asyncio
 import logging
-import pytest
-from typing import cast
-from pytest_mock import MockerFixture
-from _pytest.logging import LogCaptureFixture
 from datetime import datetime, timezone
-from unittest.mock import (
-    AsyncMock,
-    MagicMock,
-    PropertyMock,
-    patch,
-)
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-from freezegun import freeze_time
-
-from homeassistant.core import ServiceCall
-from homeassistant.helpers.update_coordinator import UpdateFailed
-
-from custom_components.bookoo.coordinator import BookooCoordinator
-from custom_components.bookoo.session_manager import SessionManager
-
-from aiobookoov2.exceptions import BookooError, BookooDeviceNotFound
+import pytest
+from _pytest.logging import LogCaptureFixture
 from aiobookoov2.const import (
     UPDATE_SOURCE_COMMAND_CHAR,
     UPDATE_SOURCE_WEIGHT_CHAR,
 )
+from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
+from freezegun import freeze_time
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers.update_coordinator import UpdateFailed
+from pytest_mock import MockerFixture
 
+from custom_components.bookoo.coordinator import BookooCoordinator
+from custom_components.bookoo.session_manager import SessionManager
 
 # Fixtures are in conftest.py
 
@@ -40,11 +32,11 @@ class TestBookooCoordinator:
         self,
         coordinator: BookooCoordinator,
         mock_scale: MagicMock,
-        mock_hass: MagicMock,
+        hass: MagicMock,
     ):
         """Test coordinator initialization."""
         assert coordinator.scale is mock_scale
-        assert coordinator.hass is mock_hass
+        assert coordinator.hass is hass
         assert coordinator.name == f"Bookoo {mock_scale.mac}"
         assert isinstance(coordinator.session_manager, SessionManager)
         assert coordinator.last_shot_data is None
@@ -54,7 +46,7 @@ class TestBookooCoordinator:
     async def test_handle_char_update_weight_data_active_shot(
         self,
         coordinator: BookooCoordinator,
-        mock_hass: MagicMock,  # Used by SessionManager
+        hass: MagicMock,  # Used by SessionManager
         freezer: freeze_time,
         caplog,
         mocker: MagicMock,  # pytest-mock fixture, though often not explicitly typed as MagicMock
@@ -173,7 +165,7 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_handle_char_update_command_char_auto_timer_start_stop(
-        self, coordinator: BookooCoordinator, mock_hass: MagicMock, caplog
+        self, coordinator: BookooCoordinator, hass: MagicMock, caplog
     ):
         """Test _handle_characteristic_update for command char with auto timer events."""
         caplog.set_level(logging.DEBUG)
@@ -219,7 +211,7 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_handle_char_update_decoded_auto_stop(
-        self, coordinator: BookooCoordinator, mock_hass: MagicMock, caplog
+        self, coordinator: BookooCoordinator, hass: MagicMock, caplog
     ):
         """Test _handle_characteristic_update for command char with auto timer stop event."""
         caplog.set_level(logging.DEBUG)
@@ -240,7 +232,7 @@ class TestBookooCoordinator:
             UPDATE_SOURCE_COMMAND_CHAR, decoded_stop_event
         )
         await asyncio.sleep(0)
-        mock_hass.async_create_task.assert_not_called()  # mock_hass.async_create_task is from the fixture, not directly called here
+        hass.async_create_task.assert_not_called()  # hass.async_create_task is from the fixture, not directly called here
         cast(AsyncMock, coordinator.session_manager.stop_session).assert_not_called()
 
         coordinator.session_manager.is_shot_active = True
@@ -261,7 +253,7 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_async_start_shot_service(
-        self, coordinator: BookooCoordinator, mock_hass: MagicMock, caplog
+        self, coordinator: BookooCoordinator, hass: MagicMock, caplog
     ):
         """Test the async_start_shot_service method."""
         caplog.set_level(logging.INFO)
@@ -322,7 +314,7 @@ class TestBookooCoordinator:
         self,
         coordinator: BookooCoordinator,
         mock_scale: MagicMock,
-        mock_hass: MagicMock,
+        hass: MagicMock,
         caplog: LogCaptureFixture,
         mocker: MockerFixture,
     ):
@@ -439,7 +431,7 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_async_stop_shot_service(
-        self, coordinator: BookooCoordinator, mock_hass: MagicMock, caplog
+        self, coordinator: BookooCoordinator, hass: MagicMock, caplog
     ):
         """Test the async_stop_shot_service method."""
         caplog.set_level(logging.INFO)
@@ -487,16 +479,21 @@ class TestBookooCoordinator:
 
     @pytest.mark.asyncio
     async def test_async_options_update_listener(
-        self, coordinator: BookooCoordinator, mock_hass: MagicMock
+        self,
+        coordinator: BookooCoordinator,
+        hass: HomeAssistant,  # Changed type hint
     ):
         """Test the options update listener reloads config and triggers reload."""
-        mock_hass.config_entries.async_reload = AsyncMock()
+        actual_hass = await anext(hass)  # type: ignore[type-var] # Resolve the async_generator
+        actual_hass.config_entries.async_reload = AsyncMock()
 
-        await coordinator._options_update_callback(mock_hass, coordinator.config_entry)
-
-        cast(AsyncMock, mock_hass.config_entries.async_reload).assert_called_once_with(
-            coordinator.config_entry.entry_id
+        await coordinator._options_update_callback(
+            actual_hass, coordinator.config_entry
         )
+
+        cast(
+            AsyncMock, actual_hass.config_entries.async_reload
+        ).assert_called_once_with(coordinator.config_entry.entry_id)
 
     @pytest.mark.asyncio
     async def test_reset_realtime_analytics(self, coordinator: BookooCoordinator):

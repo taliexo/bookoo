@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, TYPE_CHECKING, Optional
 import logging
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.util import dt as dt_util
-from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE
-from .types import (
-    FlowProfile,
-    WeightProfile,
-    ScaleTimerProfile,
-    FlowDataPoint,
-    WeightDataPoint,
-    ScaleTimerDataPoint,
-    BookooShotCompletedEventDataModel,  # Changed from TypedDict to Pydantic Model
-)
 from pydantic import ValidationError
+
 from .storage import async_add_shot_record
+from .types import (
+    BookooShotCompletedEventDataModel,  # Changed from TypedDict to Pydantic Model
+    FlowDataPoint,
+    FlowProfile,
+    ScaleTimerDataPoint,
+    ScaleTimerProfile,
+    WeightDataPoint,
+    WeightProfile,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -45,7 +46,7 @@ class SessionManager:
         self.session_scale_timer_profile: ScaleTimerProfile = []
         self.session_input_parameters: dict[str, Any] = {}
         self.session_start_trigger: str | None = None
-        self.last_shot_data: Optional[BookooShotCompletedEventDataModel] = (
+        self.last_shot_data: BookooShotCompletedEventDataModel | None = (
             None  # This will be assigned in stop_session
         )
 

@@ -3,14 +3,13 @@
 import logging
 from typing import Any
 
+import voluptuous as vol
 from aiobookoov2.exceptions import (
     BookooDeviceNotFound,
     BookooError,
     BookooUnknownDevice,
 )
 from aiobookoov2.helpers import is_bookoo_scale
-import voluptuous as vol
-
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
@@ -21,27 +20,27 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback  # Added for @callback decorator
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
+from homeassistant.core import callback  # Added for @callback decorator
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
+    EntitySelector,  # Added
+    EntitySelectorConfig,  # Added
+    NumberSelector,  # Added
+    NumberSelectorConfig,  # Added
+    NumberSelectorMode,  # Added
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    NumberSelector,  # Added
-    NumberSelectorConfig,  # Added
-    NumberSelectorMode,  # Added
-    EntitySelector,  # Added
-    EntitySelectorConfig,  # Added
 )
 
 from .const import (
     CONF_IS_VALID_SCALE,
     DOMAIN,
-    OPTION_MIN_SHOT_DURATION,
     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
     OPTION_LINKED_COFFEE_NAME_ENTITY,
+    OPTION_MIN_SHOT_DURATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -214,7 +213,7 @@ class BookooOptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             # Basic validation example (can be expanded)
             min_duration = user_input.get(OPTION_MIN_SHOT_DURATION, 0)
-            if not isinstance(min_duration, (int, float)) or min_duration < 0:
+            if not isinstance(min_duration, int | float) or min_duration < 0:
                 errors[OPTION_MIN_SHOT_DURATION] = (
                     "invalid_duration_positive_number_expected"
                 )

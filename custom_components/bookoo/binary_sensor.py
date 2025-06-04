@@ -3,8 +3,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .coordinator import BookooCoordinator  # Add this import
-
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
@@ -13,7 +11,10 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import BookooConfigEntry
+from .coordinator import (
+    BookooConfigEntry,
+    BookooCoordinator,  # Add this import
+)
 from .entity import BookooEntity
 
 # Coordinator is used to centralize the data updates

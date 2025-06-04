@@ -1,7 +1,7 @@
 import unittest
 
 from custom_components.bookoo.analytics import ShotAnalyzer
-from custom_components.bookoo.types import FlowProfile, ScaleTimerProfile, FlowDataPoint
+from custom_components.bookoo.types import FlowDataPoint, FlowProfile, ScaleTimerProfile
 
 
 class TestDetectChanneling(unittest.TestCase):

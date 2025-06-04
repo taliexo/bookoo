@@ -1,11 +1,9 @@
 """Constants for component."""
 
-from homeassistant.const import Platform
 from dataclasses import dataclass
-from typing import (
-    Optional,
-)  # Required for ConfigEntry type hint if used directly, but we'll use TYPE_CHECKING
+
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 
 DOMAIN = "bookoo"
 CONF_IS_VALID_SCALE = "is_valid_scale"
@@ -52,8 +50,8 @@ class BookooConfig:
     """Typed configuration for the Bookoo integration."""
 
     min_shot_duration: int
-    linked_bean_weight_entity: Optional[str]
-    linked_coffee_name_entity: Optional[str]
+    linked_bean_weight_entity: str | None
+    linked_coffee_name_entity: str | None
 
     enable_auto_stop_flow_cutoff: bool
     auto_stop_pre_infusion_ignore_duration: float

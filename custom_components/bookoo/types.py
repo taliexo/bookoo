@@ -1,9 +1,9 @@
 from typing import (
-    NamedTuple,
-    List,
-    Optional,
     Any,
-)  # TypedDict removed for this specific type
+    NamedTuple,
+)
+
+# TypedDict removed for this specific type
 from pydantic import BaseModel
 
 
@@ -22,9 +22,9 @@ class ScaleTimerDataPoint(NamedTuple):
     timer_value: int  # seconds
 
 
-FlowProfile = List[FlowDataPoint]
-WeightProfile = List[WeightDataPoint]
-ScaleTimerProfile = List[ScaleTimerDataPoint]
+FlowProfile = list[FlowDataPoint]
+WeightProfile = list[WeightDataPoint]
+ScaleTimerProfile = list[ScaleTimerDataPoint]
 
 
 class BookooShotCompletedEventDataModel(BaseModel):
@@ -37,18 +37,18 @@ class BookooShotCompletedEventDataModel(BaseModel):
     flow_profile: FlowProfile
     scale_timer_profile: ScaleTimerProfile
     input_parameters: dict[str, Any]
-    start_trigger: Optional[str] = None
+    start_trigger: str | None = None
     stop_reason: str
     status: str
     channeling_status: str
     pre_infusion_detected: bool
-    pre_infusion_duration_seconds: Optional[float] = None
-    extraction_uniformity_metric: Optional[float] = None
+    pre_infusion_duration_seconds: float | None = None
+    extraction_uniformity_metric: float | None = None
     average_flow_rate_gps: float
     peak_flow_rate_gps: float
-    time_to_first_flow_seconds: Optional[float] = None
-    time_to_peak_flow_seconds: Optional[float] = None
-    shot_quality_score: Optional[float] = None
+    time_to_first_flow_seconds: float | None = None
+    time_to_peak_flow_seconds: float | None = None
+    shot_quality_score: float | None = None
 
     class Config:
         allow_mutation = False  # Make instances immutable after creation

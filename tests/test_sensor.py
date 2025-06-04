@@ -1,15 +1,18 @@
 """Tests for the Bookoo sensor platform."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from homeassistant.helpers.entity_platform import EntityPlatform
+
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry  # type: ignore[import-untyped]
+from homeassistant.const import PERCENTAGE
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import EntityPlatform
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,  # type: ignore[import-untyped]
+)
 
 from custom_components.bookoo.const import DOMAIN
 from custom_components.bookoo.coordinator import BookooCoordinator
 from custom_components.bookoo.sensor import async_setup_entry
-from homeassistant.const import PERCENTAGE
-from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
