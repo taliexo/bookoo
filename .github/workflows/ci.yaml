@@ -33,7 +33,7 @@ jobs:
           # Install component dependencies from manifest.json (aiobookoov2)
           # This requires parsing manifest.json or hardcoding, let's assume aiobookoov2 for now
           # A more robust way would be to parse manifest.json for requirements
-          pip install aiobookoov2==0.3.3 # Match your current manifest
+          pip install aiobookoov2==0.3.4 # Match your current manifest
 
       - name: Run Ruff Linter
         run: ruff check .
