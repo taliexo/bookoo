@@ -3,9 +3,9 @@
   "content_in_root": false,
   "domain": "bookoo",
   "country": "AT",
-  "homeassistant": "2024.1.0",
+  "homeassistant": "2025.1.0",
   "render_readme": true,
   "zip_release": false,
   "filename": "bookoo",
-  "version": "0.6.1"
+  "version": "0.6.2"
 }
