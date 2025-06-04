@@ -1,159 +1,204 @@
-"""Functions for real-time espresso shot analytics."""
+"""Class-based analytics for real-time espresso shot analysis."""
 
 import math
-
-# Placeholder for more sophisticated type hints if needed, e.g., for profile data points
-FlowProfile = list[tuple[float, float]]  # (elapsed_seconds, flow_rate_gps)
-ScaleTimerProfile = list[tuple[float, int]]  # (elapsed_seconds, scale_timer_seconds)
+from dataclasses import dataclass
+from .types import FlowProfile, ScaleTimerProfile
 
 
-def detect_channeling(flow_profile: FlowProfile) -> str:
-    """
-    Detects channeling based on flow rate inconsistencies.
-    Considers data after an initial ramp-up phase.
+@dataclass
+class AnalyticsConfig:
+    """Configuration parameters for shot analytics."""
 
-    Args:
-        flow_profile: A list of (elapsed_seconds, flow_rate_gps) tuples.
-
-    Returns:
-        A string indicating channeling status (e.g., "None", "Mild Channeling", "Suspected Channeling (Spike)").
-    """
-    if not flow_profile:
-        return "Undetermined"
-
-    # Define parameters (these could be made configurable later)
-    initial_ignore_seconds = 7.0  # Ignore data from the first X seconds
-    min_data_points_for_analysis = (
-        10  # Minimum number of data points after ignoring initial phase
+    # Channeling detection parameters
+    channeling_initial_ignore_seconds: float = 7.0
+    channeling_min_data_points: int = 10
+    channeling_significant_flow_threshold: float = 0.05
+    channeling_cv_threshold_mild: float = 0.38
+    channeling_spike_factor_moderate: float = 1.8  # For mild-moderate spike check
+    channeling_spike_factor_high: float = 2.2  # For more definitive spike check
+    channeling_spike_mean_flow_threshold: float = (
+        0.5  # Min mean flow to consider spike detection
+    )
+    channeling_spike_cv_threshold_moderate: float = (
+        0.3  # CV threshold for mild-moderate spike
     )
 
-    # Filter out the initial phase
-    analysis_profile = [dp for dp in flow_profile if dp[0] >= initial_ignore_seconds]
+    # Pre-infusion identification parameters
+    pi_flow_threshold: float = 0.3  # g/s, flow rate below which might be PI
+    pi_max_time: float = (
+        15.0  # seconds, don't consider it PI if shot is longer than this
+    )
+    pi_min_shot_time_check: float = 1.0  # seconds, don't check too early in the shot
+    pi_min_duration_meaningful: float = (
+        1.0  # seconds, PI duration less than this is ignored
+    )
 
-    if len(analysis_profile) < min_data_points_for_analysis:
-        return "Undetermined (not enough data after initial phase)"
-
-    flows = [
-        dp[1] for dp in analysis_profile if dp[1] is not None and dp[1] > 0.05
-    ]  # Consider flows > 0.05 g/s
-
-    if (
-        len(flows) < min_data_points_for_analysis
-    ):  # Check again after filtering very low flows
-        return "Undetermined (not enough significant flow data)"
-
-    mean_flow = sum(flows) / len(flows)
-    if mean_flow == 0:  # Should be caught by flows > 0.05, but as a safeguard
-        return "None (no significant flow)"
-
-    # Calculate Standard Deviation
-    variance = sum([(flow - mean_flow) ** 2 for flow in flows]) / len(flows)
-    std_dev = math.sqrt(variance)
-
-    # Calculate Coefficient of Variation (CV)
-    coeff_of_variation = std_dev / mean_flow if mean_flow > 0 else 0
-
-    max_flow_in_analysis = 0.0
-    if flows:  # Ensure flows is not empty
-        max_flow_in_analysis = max(flows)
-
-    status = "None"
-
-    if coeff_of_variation > 0.38:  # Example threshold for high CV
-        status = "Mild Channeling (High Variation)"
-
-    if mean_flow > 0.5 and max_flow_in_analysis > mean_flow * 2.2:
-        if status == "Mild Channeling (High Variation)":
-            status = "Moderate Channeling (High Variation & Spike)"
-        else:
-            status = "Suspected Channeling (Spike)"
-    elif (
-        mean_flow > 0.5
-        and max_flow_in_analysis > mean_flow * 1.8
-        and coeff_of_variation > 0.3
-    ):
-        if status == "Mild Channeling (High Variation)":
-            status = "Mild-Moderate Channeling (Variation & Notable Peak)"
-
-    return status
+    # Extraction uniformity parameters
+    uniformity_initial_ignore_seconds: float = 7.0
+    uniformity_min_data_points: int = 10
+    uniformity_significant_flow_threshold: float = 0.1  # g/s
+    uniformity_min_significant_flow_points_ratio: float = (
+        0.5  # Ratio of min_data_points
+    )
 
 
-def identify_pre_infusion(
-    flow_profile: FlowProfile,
-    scale_timer_profile: ScaleTimerProfile,  # scale_timer_profile unused for now
-) -> tuple[bool, float | None]:
-    """
-    Simplified real-time identification if the shot *might* currently be in a pre-infusion phase.
-    Duration is a placeholder for now, as robust duration detection is complex for real-time.
-    Returns (is_currently_in_suspected_pi_phase, estimated_pi_duration_if_ended_or_ongoing)
-    """
-    if not flow_profile or len(flow_profile) < 2:
-        return False, None
+class ShotAnalyzer:
+    """Analyzes espresso shot data using a given configuration."""
 
-    current_time, current_flow = flow_profile[-1]
+    def __init__(self, config: AnalyticsConfig | None = None) -> None:
+        """Initialize the ShotAnalyzer with an AnalyticsConfig."""
+        self.config = config or AnalyticsConfig()
 
-    # Parameters
-    pi_flow_threshold = 0.3  # g/s
-    max_time_for_pi = 15.0  # seconds (don't consider it PI if shot is longer than this)
-    min_shot_time_for_pi_check = 1.0  # seconds (don't check too early)
+    def detect_channeling(self, flow_profile: FlowProfile) -> str:
+        """
+        Detects channeling based on flow rate inconsistencies.
+        Considers data after an initial ramp-up phase.
+        """
+        if not flow_profile:
+            return "Undetermined"
 
-    is_currently_pre_infusion = False
-    estimated_duration: float | None = None
+        analysis_profile = [
+            dp
+            for dp in flow_profile
+            if dp.elapsed_time >= self.config.channeling_initial_ignore_seconds
+        ]
 
-    if min_shot_time_for_pi_check <= current_time <= max_time_for_pi:
-        if current_flow <= pi_flow_threshold:
-            is_currently_pre_infusion = True
-            pi_start_time = current_time
-            for t, flow in reversed(flow_profile):
-                if flow <= pi_flow_threshold:
-                    pi_start_time = t
-                else:
-                    break
-            estimated_duration = current_time - pi_start_time
+        if len(analysis_profile) < self.config.channeling_min_data_points:
+            return "Undetermined (not enough data after initial phase)"
 
-    if estimated_duration is not None and estimated_duration < 1.0:
-        estimated_duration = None
+        flows = [
+            dp.flow_rate
+            for dp in analysis_profile
+            if dp.flow_rate is not None
+            and dp.flow_rate > self.config.channeling_significant_flow_threshold
+        ]
 
-    return is_currently_pre_infusion, estimated_duration
+        if len(flows) < self.config.channeling_min_data_points:
+            return "Undetermined (not enough significant flow data)"
 
+        mean_flow = sum(flows) / len(flows)
+        if mean_flow == 0:
+            return "None (no significant flow)"
 
-def calculate_extraction_uniformity(flow_profile: FlowProfile) -> float:
-    """
-    Calculates a score for extraction uniformity based on flow profile.
-    A higher score (towards 1.0) indicates better uniformity.
-    This version focuses on the stability of flow after an initial period.
-    """
-    if not flow_profile:
-        return 0.0
+        variance = sum([(flow - mean_flow) ** 2 for flow in flows]) / len(flows)
+        std_dev = math.sqrt(variance)
+        coeff_of_variation = std_dev / mean_flow if mean_flow > 0 else 0
+        max_flow_in_analysis = max(flows) if flows else 0.0
 
-    initial_ignore_seconds = 7.0  # Corresponds to detect_channeling ignore period
-    min_data_points_for_analysis = 10
+        status = "None"
 
-    analysis_profile = [dp for dp in flow_profile if dp[0] >= initial_ignore_seconds]
+        if coeff_of_variation > self.config.channeling_cv_threshold_mild:
+            status = "Mild Channeling (High Variation)"
 
-    if len(analysis_profile) < min_data_points_for_analysis:
-        return 0.0
+        if (
+            mean_flow > self.config.channeling_spike_mean_flow_threshold
+            and max_flow_in_analysis
+            > mean_flow * self.config.channeling_spike_factor_high
+        ):
+            if status == "Mild Channeling (High Variation)":
+                status = "Moderate Channeling (High Variation & Spike)"
+            else:
+                status = "Suspected Channeling (Spike)"
+        elif (
+            mean_flow > self.config.channeling_spike_mean_flow_threshold
+            and max_flow_in_analysis
+            > mean_flow * self.config.channeling_spike_factor_moderate
+            and coeff_of_variation > self.config.channeling_spike_cv_threshold_moderate
+        ):
+            # This condition implies a notable peak combined with existing variation
+            if (
+                status == "Mild Channeling (High Variation)"
+            ):  # Enhances existing mild channeling
+                status = "Mild-Moderate Channeling (Variation & Notable Peak)"
+            # If status was "None", this specific combination might not warrant a direct jump
+            # to "Mild-Moderate" without the base CV being high. The logic prioritizes CV first.
 
-    flows = [
-        dp[1] for dp in analysis_profile if dp[1] is not None and dp[1] > 0.1
-    ]  # Consider flows > 0.1 g/s for uniformity
+        return status
 
-    if (
-        len(flows) < min_data_points_for_analysis // 2
-    ):  # Need a decent number of significant flow points
-        return 0.0
+    def identify_pre_infusion(
+        self,
+        flow_profile: FlowProfile,
+        scale_timer_profile: ScaleTimerProfile,  # Currently unused, but kept for signature consistency
+    ) -> tuple[bool, float | None]:
+        """
+        Simplified real-time identification if the shot *might* currently be in a pre-infusion phase.
+        """
+        if not flow_profile or len(flow_profile) < 2:
+            return False, None
 
-    mean_flow = sum(flows) / len(flows)
-    if mean_flow == 0:
-        return 0.0
+        current_dp = flow_profile[-1]
+        current_time = current_dp.elapsed_time
+        current_flow = current_dp.flow_rate
+        is_currently_pre_infusion = False
+        estimated_duration: float | None = None
 
-    variance = sum([(f - mean_flow) ** 2 for f in flows]) / len(flows)
-    std_dev = math.sqrt(variance)
+        if (
+            self.config.pi_min_shot_time_check
+            <= current_time
+            <= self.config.pi_max_time
+        ):
+            if current_flow <= self.config.pi_flow_threshold:
+                is_currently_pre_infusion = True
+                # Try to find when this low-flow phase started
+                pi_phase_start_time = current_time
+                for dp_reversed in reversed(flow_profile):
+                    if dp_reversed.flow_rate <= self.config.pi_flow_threshold:
+                        pi_phase_start_time = dp_reversed.elapsed_time
+                    else:
+                        # Flow went above threshold, so PI ended before this point or at this point
+                        break
+                estimated_duration = current_time - pi_phase_start_time
 
-    coeff_of_variation = (
-        std_dev / mean_flow if mean_flow > 0 else 1.0
-    )  # Assign high CV if mean_flow is 0
+        if (
+            estimated_duration is not None
+            and estimated_duration < self.config.pi_min_duration_meaningful
+        ):
+            estimated_duration = None  # Not a meaningful PI duration
+            is_currently_pre_infusion = (
+                False  # If duration too short, not considered PI
+            )
 
-    uniformity_score = max(0.0, 1.0 - coeff_of_variation)
+        return is_currently_pre_infusion, estimated_duration
 
-    return round(uniformity_score, 2)
+    def calculate_extraction_uniformity(self, flow_profile: FlowProfile) -> float:
+        """
+        Calculates a score for extraction uniformity based on flow profile.
+        A higher score (towards 1.0) indicates better uniformity.
+        """
+        if not flow_profile:
+            return 0.0
+
+        analysis_profile = [
+            dp
+            for dp in flow_profile
+            if dp.elapsed_time >= self.config.uniformity_initial_ignore_seconds
+        ]
+
+        if len(analysis_profile) < self.config.uniformity_min_data_points:
+            return 0.0
+
+        flows = [
+            dp.flow_rate
+            for dp in analysis_profile
+            if dp.flow_rate is not None
+            and dp.flow_rate > self.config.uniformity_significant_flow_threshold
+        ]
+
+        min_required_flow_points = int(
+            self.config.uniformity_min_data_points
+            * self.config.uniformity_min_significant_flow_points_ratio
+        )
+        if len(flows) < min_required_flow_points:
+            return 0.0
+
+        mean_flow = sum(flows) / len(flows)
+        if mean_flow == 0:
+            return 0.0  # Or handle as extremely non-uniform if preferred
+
+        variance = sum([(f - mean_flow) ** 2 for f in flows]) / len(flows)
+        std_dev = math.sqrt(variance)
+
+        coeff_of_variation = std_dev / mean_flow if mean_flow > 0 else 1.0
+        uniformity_score = max(0.0, 1.0 - coeff_of_variation)
+
+        return round(uniformity_score, 2)

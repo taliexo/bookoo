@@ -1,0 +1,14 @@
+# Testing
+pytest==8.3.5
+pytest-asyncio>=0.21.0,<0.24.0
+pytest-cov>=4.1.0,<5.0.0
+pytest-mock>=3.10.0,<4.0.0
+freezegun>=1.2.0,<2.0.0
+
+# Linting and Type Checking (versions often managed by pre-commit, but listed for explicitness)
+# Check your .pre-commit-config.yaml for exact versions used by pre-commit hooks
+# mypy>=1.0.0,<2.0.0
+# ruff>=0.1.0,<0.5.0
+
+# Home Assistant Core (for stubs and test utilities if needed directly)
+# homeassistant>=2025.5.0 # Example: Pin to a recent HA version if tests need it

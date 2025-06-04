@@ -53,7 +53,7 @@ async def configured_config_entry_with_coordinator(
         return_value=mock_bookoo_scale_for_sensor,
     ):
         coordinator = BookooCoordinator(hass, mock_config_entry_for_sensor)
-        coordinator.last_shot_data = {}  # Initialize
+        coordinator.last_shot_data = None  # Initialize
         # Set initial values for realtime analytics for predictability in tests
         coordinator.realtime_channeling_status = "None"
         coordinator.realtime_pre_infusion_active = False

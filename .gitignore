@@ -52,3 +52,5 @@ logs/
 
 *.ruff_cache
 *.mypy_cache
+
+reports/
