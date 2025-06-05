@@ -15,12 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_KEY = "bookoo_shot_history"
 STORAGE_VERSION = 1
 
-# Consider adding a check for old SQLite DB and logging a one-time migration notice.
-_LOGGER.warning(
-    "Bookoo integration now uses Home Assistant's internal storage for shot history. "
-    "Existing data from bookoo_shots.db (SQLite) will not be automatically migrated. "
-    "New shots will be saved to the new format."
-)
+# Shot history is managed by Home Assistant's Store.
 
 
 def _get_store(hass: HomeAssistant) -> Store[list[dict[str, Any]]]:

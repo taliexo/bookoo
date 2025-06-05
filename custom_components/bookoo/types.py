@@ -1,3 +1,4 @@
+import datetime
 from typing import (
     Any,
     NamedTuple,
@@ -30,8 +31,8 @@ ScaleTimerProfile = list[ScaleTimerDataPoint]
 class BookooShotCompletedEventDataModel(BaseModel):
     device_id: str
     entry_id: str
-    start_time_utc: str  # ISO format, consider datetime for future parsing
-    end_time_utc: str  # ISO format, consider datetime for future parsing
+    start_time_utc: datetime.datetime
+    end_time_utc: datetime.datetime
     duration_seconds: float
     final_weight_grams: float
     flow_profile: FlowProfile

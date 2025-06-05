@@ -107,12 +107,12 @@ class SessionManager:
             )
 
     async def start_session(self, trigger: str) -> None:
-        async with self._session_lock:
-            """Starts a new shot session.
+        """Starts a new shot session.
 
-            Args:
-                trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
-            """
+        Args:
+            trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
+        """
+        async with self._session_lock:
             # This block was incorrectly modified by the previous tool call and is being reverted/ignored.
             # The actual target for the first model_dump is later in the stop_session method.
 

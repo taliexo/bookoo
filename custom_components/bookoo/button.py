@@ -6,10 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.core import (
-    HomeAssistant,
-    ServiceCall,
-)
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -78,22 +75,14 @@ BUTTONS: tuple[BookooButtonEntityDescription, ...] = (
         translation_key="start_shot_session",
         icon="mdi:play-circle-outline",
         # Pass a dummy ServiceCall object or ensure coordinator method handles None
-        press_fn=lambda coordinator: coordinator.async_start_shot_service(
-            ServiceCall(
-                hass=coordinator.hass, domain="bookoo", service="start_shot_session"
-            )
-        ),
+        press_fn=lambda coordinator: coordinator.async_start_shot_service(),
     ),
     BookooButtonEntityDescription(
         key="stop_shot_session",
         translation_key="stop_shot_session",
         icon="mdi:stop-circle-outline",
         # Pass a dummy ServiceCall object or ensure coordinator method handles None
-        press_fn=lambda coordinator: coordinator.async_stop_shot_service(
-            ServiceCall(
-                hass=coordinator.hass, domain="bookoo", service="stop_shot_session"
-            )
-        ),
+        press_fn=lambda coordinator: coordinator.async_stop_shot_service(),
     ),
 )
 
