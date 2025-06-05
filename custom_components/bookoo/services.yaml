@@ -7,3 +7,11 @@ stop_shot:
   name: Stop Espresso Shot
   description: Stops the current espresso shot session and stops the timer on the scale.
   # No fields needed for now.
+
+connect_scale:
+  name: Connect Scale
+  description: Actively attempts to connect to the Bookoo scale, with retries.
+
+disconnect_scale:
+  name: Disconnect Scale
+  description: Disconnects Home Assistant from the Bookoo scale.

@@ -4,7 +4,14 @@ import typing
 
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS, SERVICE_START_SHOT, SERVICE_STOP_SHOT
+from .const import (
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_START_SHOT,
+    SERVICE_STOP_SHOT,
+    SERVICE_CONNECT_SCALE,
+    SERVICE_DISCONNECT_SCALE,
+)
 from .coordinator import BookooConfigEntry, BookooCoordinator
 
 
@@ -28,6 +35,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: BookooConfigEntry) -> bo
         DOMAIN,
         SERVICE_STOP_SHOT,
         coordinator.async_stop_shot_service,  # Link to coordinator method
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONNECT_SCALE,
+        coordinator.async_connect_scale_service,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DISCONNECT_SCALE,
+        coordinator.async_disconnect_scale_service,
     )
 
     return True

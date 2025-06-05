@@ -14,6 +14,8 @@ EVENT_BOOKOO_SHOT_COMPLETED = f"{DOMAIN}_shot_completed"
 # Service names
 SERVICE_START_SHOT = "start_shot"
 SERVICE_STOP_SHOT = "stop_shot"
+SERVICE_CONNECT_SCALE = "connect_scale"
+SERVICE_DISCONNECT_SCALE = "disconnect_scale"
 
 # Option Keys
 OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"

@@ -91,6 +91,7 @@ class BookooCoordinator(
             self._options_update_callback
         )
         self._last_analytics_update_time: datetime | None = None
+        self._user_initiated_disconnect: bool = False  # Flag for disconnect service
 
     @property
     def scale(self) -> BookooScale:
@@ -353,6 +354,13 @@ class BookooCoordinator(
         """Attempts to connect to the Bookoo scale if not already connected.
         Raises exceptions on failure.
         """
+        if self._user_initiated_disconnect:
+            _LOGGER.debug(
+                "%s: Skipping connection attempt due to user-initiated disconnect.",
+                self.name,
+            )
+            return
+
         if self._scale.connected:
             return
 
@@ -360,7 +368,7 @@ class BookooCoordinator(
         try:
             # Use a timeout for the connection attempt itself
             async with asyncio.timeout(self.bookoo_config.connect_timeout):
-                await self._scale.connect()
+                await self._scale.connect(attempts=1)
 
             if not self._scale.connected:
                 _LOGGER.warning(
@@ -662,3 +670,97 @@ class BookooCoordinator(
                     "error_details": str(e),
                 },
             ) from e
+
+    async def async_connect_scale_service(
+        self, call: ServiceCall | None = None
+    ) -> None:
+        """Service call to actively connect to the Bookoo scale."""
+        _LOGGER.info("%s: Connect scale service called.", self.name)
+        self._user_initiated_disconnect = False  # Clear disconnect flag
+
+        if self._scale.connected:
+            _LOGGER.info(
+                "%s: Scale already connected. Skipping connect service action.",
+                self.name,
+            )
+            return
+
+        try:
+            _LOGGER.info(
+                "%s: Attempting to connect to scale via service call.", self.name
+            )
+            # Using default retry attempts from aiobookoo's connect method
+            await self._scale.connect()
+            if self._scale.connected:
+                _LOGGER.info(
+                    "%s: Successfully connected to scale via service.", self.name
+                )
+                self._ensure_queue_processor_running()
+                await (
+                    self.async_request_refresh()
+                )  # Trigger a data update to refresh entities
+            else:
+                _LOGGER.error(
+                    "%s: Failed to connect to scale via service after retries.",
+                    self.name,
+                )
+                # Consider raising HomeAssistantError to provide feedback to the user
+                # raise HomeAssistantError(f"Failed to connect to {self.name} after retries.")
+
+        except BookooError as err:
+            _LOGGER.error(
+                "%s: Error connecting to Bookoo scale via service: %s", self.name, err
+            )
+            # Consider raising HomeAssistantError
+            # raise HomeAssistantError(f"Error connecting to {self.name}: {err}") from err
+        except Exception as err:
+            _LOGGER.exception(
+                "%s: Unexpected error during connect_scale service: %s", self.name, err
+            )
+            # Consider raising HomeAssistantError
+            # raise HomeAssistantError(f"Unexpected error connecting to {self.name}: {err}") from err
+
+    async def async_disconnect_scale_service(
+        self, call: ServiceCall | None = None
+    ) -> None:
+        """Service call to disconnect from the Bookoo scale."""
+        _LOGGER.info("%s: Disconnect scale service called.", self.name)
+        if not self._scale.connected:
+            _LOGGER.info(
+                "%s: Scale already disconnected. Skipping disconnect service action.",
+                self.name,
+            )
+            self._user_initiated_disconnect = (
+                True  # Still set flag in case it was called while already disconnected
+            )
+            return
+
+        try:
+            await self._scale.disconnect()
+            self._user_initiated_disconnect = True
+            _LOGGER.info(
+                "%s: Successfully disconnected from scale via service.", self.name
+            )
+            # Entities will become unavailable due to scale.connected being False after disconnect
+            # and coordinator.async_update_listeners() being called by aiobookoo's disconnect handler.
+            # We might still want to explicitly refresh here if there are other states managed by coordinator
+            # that need to reflect this user-initiated disconnect immediately.
+            await self.async_request_refresh()
+        except BookooError as err:
+            _LOGGER.error(
+                "%s: Error disconnecting from Bookoo scale via service: %s",
+                self.name,
+                err,
+            )
+            # Consider raising HomeAssistantError
+            # raise HomeAssistantError(f"Error disconnecting from {self.name}: {err}") from err
+        except Exception as err:
+            _LOGGER.exception(
+                "%s: Unexpected error during disconnect_scale service: %s",
+                self.name,
+                err,
+            )
+            # Consider raising HomeAssistantError
+            # raise HomeAssistantError(f"Unexpected error disconnecting from {self.name}: {err}") from err
+
+    # endregion Service Calls
