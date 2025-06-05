@@ -54,3 +54,6 @@ logs/
 *.mypy_cache
 
 reports/
+
+# Windsurf
+.windsurf
