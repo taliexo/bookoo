@@ -354,12 +354,12 @@ class TestBookooCoordinator:
             new_callable=PropertyMock,
             return_value=False,
         )
-        mock_ac_bookoo_error = cast(AsyncMock, coordinator.scale.async_connect)  # type: ignore[attr-defined]
+        mock_connect_bookoo_error = cast(AsyncMock, coordinator.scale.connect)
         bookoo_error_instance = BookooError("Test BookooError")
-        mock_ac_bookoo_error.side_effect = bookoo_error_instance
-        mock_ac_bookoo_error.reset_mock()
+        mock_connect_bookoo_error.side_effect = bookoo_error_instance
+        mock_connect_bookoo_error.reset_mock()
         # Re-assign side_effect as reset_mock clears it.
-        mock_ac_bookoo_error.side_effect = bookoo_error_instance
+        mock_connect_bookoo_error.side_effect = bookoo_error_instance
 
         with pytest.raises(
             UpdateFailed,
@@ -367,7 +367,7 @@ class TestBookooCoordinator:
         ):
             await coordinator._async_update_data()
 
-        mock_ac_bookoo_error.assert_called_once()
+        mock_connect_bookoo_error.assert_called_once()
         self._assert_log_message(
             caplog,
             "WARNING",
@@ -382,15 +382,17 @@ class TestBookooCoordinator:
             new_callable=PropertyMock,
             return_value=False,
         )
-        mock_ac_not_found = cast(AsyncMock, coordinator.scale.async_connect)  # type: ignore[attr-defined]
-        mock_ac_not_found.side_effect = BookooDeviceNotFound("Test DeviceNotFound")
-        mock_ac_not_found.return_value = None
-        mock_ac_not_found.reset_mock()
+        mock_connect_not_found = cast(AsyncMock, coordinator.scale.connect)
+        mock_connect_not_found.side_effect = BookooDeviceNotFound("Test DeviceNotFound")
+        mock_connect_not_found.return_value = (
+            None  # connect() returns None, so this is fine
+        )
+        mock_connect_not_found.reset_mock()
         with pytest.raises(
             UpdateFailed, match="Bookoo scale device not found: Test DeviceNotFound"
         ):
             await coordinator._async_update_data()
-        mock_ac_not_found.assert_called_once()
+        mock_connect_not_found.assert_called_once()
         self._assert_log_message(
             caplog,
             "WARNING",
@@ -460,15 +462,15 @@ class TestBookooCoordinator:
             coordinator.scale,
             "connected",
             new_callable=PropertyMock,
-            return_value=False,
+            side_effect=[False, True],  # False for initial check, True after connect
         )  # Attempting to reconnect
-        mock_ac3 = cast(AsyncMock, coordinator.scale.async_connect)  # type: ignore[attr-defined]
-        mock_ac3.return_value = True
-        mock_ac3.reset_mock()
+        mock_connect3 = cast(AsyncMock, coordinator.scale.connect)
+        # mock_connect3.return_value = True # No longer needed, connect returns None
+        mock_connect3.reset_mock()
         cast(AsyncMock, coordinator.scale.process_queue).side_effect = None
         await coordinator._async_update_data()
         cast(AsyncMock, coordinator.session_manager.stop_session).assert_not_called()
-        mock_ac3.assert_called_once()
+        mock_connect3.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_update_data_initial_connect_success(
@@ -485,12 +487,12 @@ class TestBookooCoordinator:
             coordinator.scale,
             "connected",
             new_callable=PropertyMock,
-            return_value=False,
+            side_effect=[False, True],  # False for initial check, True after connect
         )
 
-        mock_async_connect = cast(AsyncMock, coordinator.scale.async_connect)  # type: ignore[attr-defined]
-        mock_async_connect.return_value = True  # Simulate successful connection
-        mock_async_connect.reset_mock()
+        mock_connect = cast(AsyncMock, coordinator.scale.connect)
+        # mock_connect.return_value = True # No longer needed, connect returns None
+        mock_connect.reset_mock()
 
         mock_create_task = mocker.patch.object(
             coordinator.config_entry, "async_create_background_task"
@@ -498,7 +500,7 @@ class TestBookooCoordinator:
 
         await coordinator._async_update_data()
 
-        mock_async_connect.assert_called_once()
+        mock_connect.assert_called_once()
         # Assert that the 'connected' attribute on the mock scale was set to True by the coordinator
         assert coordinator.scale.connected is True
         self._assert_log_message(
@@ -524,12 +526,15 @@ class TestBookooCoordinator:
             coordinator.scale,
             "connected",
             new_callable=PropertyMock,
-            return_value=False,
+            side_effect=[
+                False,
+                False,
+            ],  # False before connect, still False after connect fails
         )
 
-        mock_async_connect = cast(AsyncMock, coordinator.scale.async_connect)  # type: ignore[attr-defined]
-        mock_async_connect.return_value = False  # Simulate connection failure
-        mock_async_connect.reset_mock()
+        mock_connect = cast(AsyncMock, coordinator.scale.connect)
+        # mock_connect.return_value = False # No longer needed, connect returns None
+        mock_connect.reset_mock()
 
         # Prevent actual task creation if logic were to somehow reach it
         mocker.patch.object(coordinator.config_entry, "async_create_background_task")
@@ -539,19 +544,15 @@ class TestBookooCoordinator:
 
         # Check the specific UpdateFailed message propagated from _handle_specific_update_exception
         # which wraps the asyncio.TimeoutError raised by _attempt_bookoo_connection
-        expected_error_detail = (
-            "Connection attempt failed (async_connect returned False)"
-        )
-        assert f"Timeout connecting to Bookoo scale: {expected_error_detail}" in str(
+        assert "Connection attempt failed (scale not connected after attempt)" in str(
             excinfo.value
         )
-
-        mock_async_connect.assert_called_once()
+        mock_connect.assert_called_once()  # Ensure connect was attempted
         self._assert_log_message(
             caplog,
             "WARNING",
-            "custom_components.bookoo.coordinator",
-            f"{coordinator.name}: Timeout connecting to Bookoo scale: {expected_error_detail}",
+            coordinator.logger.name,
+            "Failed to connect to scale (scale not connected after attempt).",
         )
 
     @pytest.mark.asyncio

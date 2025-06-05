@@ -24,5 +24,5 @@
   "integration_type": "device",
   "iot_class": "local_push",
   "loggers": ["aiobookoov2"],
-  "requirements": ["aiobookoov2==0.3.5", "pydantic>=2.0.0"]
+  "requirements": ["aiobookoov2==0.3.6", "pydantic>=2.0.0"]
 }

@@ -359,16 +359,16 @@ class BookooCoordinator(
         try:
             # Use a timeout for the connection attempt itself
             async with asyncio.timeout(self.bookoo_config.connect_timeout):
-                connected_successfully = await self._scale.async_connect()  # type: ignore[attr-defined] # MyPy error: async_connect
+                await self._scale.connect()
 
-            if not connected_successfully:
+            if not self._scale.connected:
                 _LOGGER.warning(
-                    "%s: Failed to connect to scale (async_connect returned False).",
+                    "%s: Failed to connect to scale (scale not connected after attempt).",
                     self.name,
                 )
                 # This specific condition is treated as a timeout for consistency in error handling
                 raise asyncio.TimeoutError(
-                    "Connection attempt failed (async_connect returned False)"
+                    "Connection attempt failed (scale not connected after attempt)"
                 )
 
             _LOGGER.info("%s: Successfully connected to scale.", self.name)
