@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.core import (  # Added ServiceCall for type hint
+from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 # Removed unused SERVICE_START_SHOT, SERVICE_STOP_SHOT, DOMAIN as buttons now call coordinator directly
@@ -142,3 +143,6 @@ class BookooButton(BookooEntity, ButtonEntity):
                 exc_info=True,
             )
             # Optionally, re-raise or handle specific exceptions if needed
+            raise HomeAssistantError(
+                f"Error pressing button {self.entity_description.key}: {e}"
+            ) from e

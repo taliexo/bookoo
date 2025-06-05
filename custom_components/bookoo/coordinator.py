@@ -20,6 +20,7 @@ from aiobookoov2.exceptions import BookooDeviceNotFound, BookooError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .analytics import ShotAnalyzer
@@ -410,6 +411,33 @@ class BookooCoordinator(
         """Close resources and disconnect the scale."""
         _LOGGER.debug("Closing BookooCoordinator resources for %s", self.name)
         if self._scale:
+            # Cancel process_queue_task if running (Audit Issue 3.1)
+            if (
+                hasattr(self._scale, "process_queue_task")
+                and self._scale.process_queue_task
+            ):
+                _LOGGER.debug(
+                    "Attempting to cancel process_queue_task for %s during async_close",
+                    self.name,
+                )
+                self._scale.process_queue_task.cancel()
+                try:
+                    await self._scale.process_queue_task
+                    _LOGGER.debug(
+                        "process_queue_task for %s awaited after cancellation request",
+                        self.name,
+                    )
+                except asyncio.CancelledError:
+                    _LOGGER.debug(
+                        "process_queue_task for %s successfully cancelled", self.name
+                    )
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Error awaiting process_queue_task for %s after cancellation: %s",
+                        self.name,
+                        e,
+                    )
+
             if self._scale.connected:
                 try:
                     _LOGGER.debug(
@@ -468,12 +496,43 @@ class BookooCoordinator(
         self, err: Exception, error_message_prefix: str, disconnect_reason_suffix: str
     ) -> None:
         """Handles common logic for specific known exceptions during _async_update_data."""
-        _LOGGER.warning("%s: %s: %s", self.name, error_message_prefix, err)
         if self.session_manager.is_shot_active:
-            self._handle_active_shot_disconnection(
-                f"{disconnect_reason_suffix}_during_update"
+            self._handle_active_shot_disconnection(disconnect_reason_suffix)
+
+        if isinstance(err, asyncio.TimeoutError):
+            _LOGGER.warning(
+                "%s: %s - Timeout: %s", self.name, error_message_prefix, err
             )
-        raise UpdateFailed(f"{error_message_prefix}: {err}") from err
+            raise UpdateFailed(
+                translation_key="connection_timeout",
+                translation_placeholders={"error_details": str(err)},
+            ) from err
+        if isinstance(err, BookooDeviceNotFound):
+            _LOGGER.error(
+                "%s: %s - Device not found: %s", self.name, error_message_prefix, err
+            )
+            raise UpdateFailed(
+                translation_key="device_not_found",
+                translation_placeholders={
+                    "address": str(self._scale.address_or_ble_device)
+                },
+            ) from err
+        if isinstance(err, BookooError):
+            _LOGGER.warning(
+                "%s: %s - BookooError: %s", self.name, error_message_prefix, err
+            )
+            raise UpdateFailed(
+                translation_key="cannot_connect",  # Generic connection error for BookooError
+                translation_placeholders={"error_details": str(err)},
+            ) from err
+
+        _LOGGER.exception(
+            "%s: %s - Unexpected error: %s", self.name, error_message_prefix, err
+        )
+        raise UpdateFailed(
+            translation_key="unexpected_connection_error",
+            translation_placeholders={"error_details": str(err)},
+        ) from err
 
     async def _async_update_data(self) -> None:
         """Fetch the latest data from the Bookoo scale.
@@ -540,9 +599,15 @@ class BookooCoordinator(
                 "%s: Error sending Tare & Start Timer command to scale: %s",
                 self.name,
                 e,
+                exc_info=True,  # Add exc_info for better debugging in logs
             )
-            # Optionally, stop session if scale command failed after session started
-            # self.hass.async_create_task(self.session_manager.stop_session(stop_reason="command_failed_start"))
+            raise HomeAssistantError(
+                translation_key="service_call_failed",
+                translation_placeholders={
+                    "service_name": "start_shot (tare_and_start_timer)",
+                    "error_details": str(e),
+                },
+            ) from e
 
     async def async_stop_shot_service(self, call: ServiceCall) -> None:
         """Service call to stop the current shot session via HA."""
@@ -554,15 +619,221 @@ class BookooCoordinator(
         _LOGGER.info("%s: HA service stopping shot.", self.name)
         stop_reason_for_session = "ha_service"
         try:
-            await self._scale.stop_timer()
+            await (
+                self._scale.stop_timer()
+            )  # Or appropriate command to stop scale interaction
             _LOGGER.debug("Sent Stop Timer command to scale.")
+            # Stop session manager after successfully sending command to scale
+            self.hass.async_create_task(
+                self.session_manager.stop_session(stop_reason=stop_reason_for_session)
+            )
         except BookooError as e:
             _LOGGER.error(
-                "%s: Error sending Stop Timer command to scale: %s", self.name, e
+                "%s: Error sending Stop Timer command to scale: %s",
+                self.name,
+                e,
+                exc_info=True,  # Add exc_info for better debugging
             )
-            stop_reason_for_session = "ha_service_scale_error"
+            # If stopping scale command fails, still try to stop session manager
+            _LOGGER.warning(
+                "%s: Attempting to stop session manager despite scale command error.",
+                self.name,
+            )
+            self.hass.async_create_task(
+                self.session_manager.stop_session(
+                    stop_reason=f"{stop_reason_for_session}_scale_cmd_fail"
+                )
+            )
+            raise HomeAssistantError(
+                translation_key="service_call_failed",
+                translation_placeholders={
+                    "service_name": "stop_shot (stop_timer)",
+                    "error_details": str(e),
+                },
+            ) from e
 
-        # Create task for stopping session to not block service call return
-        self.hass.async_create_task(
-            self.session_manager.stop_session(stop_reason=stop_reason_for_session)
+
+async def _ensure_scale_connected_and_processing(self) -> None:
+    """Ensure the scale is connected and its data processing queue is active.
+
+    Raises:
+        UpdateFailed: If connection or queue setup fails.
+        BookooDeviceNotFound: If the device is not found.
+        BookooError: For other Bookoo specific errors during connection.
+        asyncio.TimeoutError: If connection times out.
+    """
+    # Step 1: Attempt connection (will raise on failure)
+    # The _attempt_bookoo_connection method handles its own logging for various states.
+    await self._attempt_bookoo_connection()
+
+    # Step 2: If connection successful (i.e., no exception raised by step 1),
+    # ensure queue processor is running.
+    # _attempt_bookoo_connection should ensure self._scale.is_connected is True if it returns.
+    if not self._scale.connected:
+        # This path indicates an unexpected state if _attempt_bookoo_connection is supposed to always raise on failure.
+        _LOGGER.error(
+            "%s: Scale not connected after _attempt_bookoo_connection, but no exception was raised. This is unexpected.",
+            self.name,
         )
+        raise UpdateFailed(f"Bookoo scale {self.name} connection state inconsistent.")
+
+    self._ensure_queue_processor_running()
+
+
+def _handle_specific_update_exception(
+    self, err: Exception, error_message_prefix: str, disconnect_reason_suffix: str
+) -> None:
+    """Handles common logic for specific known exceptions during _async_update_data."""
+    if self.session_manager.is_shot_active:
+        self._handle_active_shot_disconnection(disconnect_reason_suffix)
+
+    if isinstance(err, asyncio.TimeoutError):
+        _LOGGER.warning("%s: %s - Timeout: %s", self.name, error_message_prefix, err)
+        raise UpdateFailed(
+            translation_key="connection_timeout",
+            translation_placeholders={"error_details": str(err)},
+        ) from err
+    if isinstance(err, BookooDeviceNotFound):
+        _LOGGER.error(
+            "%s: %s - Device not found: %s", self.name, error_message_prefix, err
+        )
+        raise UpdateFailed(
+            translation_key="device_not_found",
+            translation_placeholders={
+                "address": str(self._scale.address_or_ble_device)
+            },
+        ) from err
+    if isinstance(err, BookooError):
+        _LOGGER.warning(
+            "%s: %s - BookooError: %s", self.name, error_message_prefix, err
+        )
+        raise UpdateFailed(
+            translation_key="cannot_connect",  # Generic connection error for BookooError
+            translation_placeholders={"error_details": str(err)},
+        ) from err
+
+    _LOGGER.exception(
+        "%s: %s - Unexpected error: %s", self.name, error_message_prefix, err
+    )
+    raise UpdateFailed(
+        translation_key="unexpected_connection_error",
+        translation_placeholders={"error_details": str(err)},
+    ) from err
+
+
+async def _async_update_data(self) -> None:
+    """Fetch the latest data from the Bookoo scale.
+
+    This method is called by the DataUpdateCoordinator base class to refresh data.
+    It ensures the scale is connected and processes any queued updates.
+    Returns None as entities subscribe to updates rather than fetching data directly
+    from this method's return value.
+    Raises UpdateFailed on critical errors to signal HA.
+    """
+    _LOGGER.debug("%s: Attempting to update data from Bookoo scale.", self.name)
+    try:
+        await self._ensure_scale_connected_and_processing()
+        _LOGGER.debug(
+            "%s: Data update check complete. Scale connected and processing.",
+            self.name,
+        )
+    except BookooDeviceNotFound as err:
+        self._handle_specific_update_exception(
+            err, "Bookoo scale device not found", "device_not_found"
+        )
+    except BookooError as err:  # Catches specific Bookoo errors like connection issues
+        self._handle_specific_update_exception(
+            err, "Error communicating with Bookoo scale", "bookoo_error"
+        )
+    except asyncio.TimeoutError as err:  # Specifically for asyncio.TimeoutError
+        self._handle_specific_update_exception(
+            err, "Timeout connecting to Bookoo scale", "timeout"
+        )
+    except Exception as err:  # Catch-all for other unexpected errors
+        _LOGGER.exception(  # Keep full exception log for truly unexpected errors
+            "%s: Unexpected error updating Bookoo scale data: %s", self.name, err
+        )
+        if self.session_manager.is_shot_active:
+            self._handle_active_shot_disconnection("unexpected_error_during_update")
+        # Ensure we always raise UpdateFailed for the coordinator's error handling
+        if isinstance(err, UpdateFailed):  # If it's already UpdateFailed, re-raise
+            raise
+        raise UpdateFailed(f"Unexpected error updating Bookoo data: {err}") from err
+    # This return is only reached if the try block completes successfully.
+
+
+# Service call handlers
+async def async_start_shot_service(self, call: ServiceCall) -> None:
+    """Service call to start a new shot session via HA."""
+    if self.session_manager.is_shot_active:
+        _LOGGER.warning(
+            "%s: Start shot service called, but a shot is already active.",
+            self.name,
+        )
+        return
+    _LOGGER.info("%s: HA service starting shot.", self.name)
+    self._reset_realtime_analytics()
+    # Create task for starting session to not block service call return
+    self.hass.async_create_task(
+        self.session_manager.start_session(trigger="ha_service")
+    )
+    try:
+        await self._scale.tare_and_start_timer()
+        _LOGGER.debug("Sent Tare & Start Timer command to scale.")
+    except BookooError as e:
+        _LOGGER.error(
+            "%s: Error sending Tare & Start Timer command to scale: %s",
+            self.name,
+            e,
+            exc_info=True,  # Add exc_info for better debugging in logs
+        )
+        raise HomeAssistantError(
+            translation_key="service_call_failed",
+            translation_placeholders={
+                "service_name": "start_shot (tare_and_start_timer)",
+                "error_details": str(e),
+            },
+        ) from e
+
+
+async def async_stop_shot_service(self, call: ServiceCall) -> None:
+    """Service call to stop the current shot session via HA."""
+    if not self.session_manager.is_shot_active:
+        _LOGGER.warning(
+            "%s: Stop shot service called, but no shot is active.", self.name
+        )
+        return
+    _LOGGER.info("%s: HA service stopping shot.", self.name)
+    stop_reason_for_session = "ha_service"
+    try:
+        await self._scale.stop_timer()
+        _LOGGER.debug("Sent Stop Timer command to scale.")
+    except BookooError as e:
+        _LOGGER.error(
+            "%s: Error sending Stop command to scale: %s",
+            self.name,
+            e,
+            exc_info=True,  # Add exc_info for better debugging in logs
+        )
+        # If stopping scale command fails, still try to stop session manager
+        _LOGGER.warning(
+            "%s: Attempting to stop session manager despite scale command error.",
+            self.name,
+        )
+        self.hass.async_create_task(
+            self.session_manager.stop_session(
+                stop_reason=f"{stop_reason_for_session}_scale_cmd_fail"
+            )
+        )
+        raise HomeAssistantError(
+            translation_key="service_call_failed",
+            translation_placeholders={
+                "service_name": "stop_shot (stop_timer)",
+                "error_details": str(e),
+            },
+        ) from e
+
+    # Create task for stopping session to not block service call return
+    self.hass.async_create_task(
+        self.session_manager.stop_session(stop_reason=stop_reason_for_session)
+    )

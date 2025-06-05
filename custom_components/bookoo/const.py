@@ -19,6 +19,8 @@ SERVICE_STOP_SHOT = "stop_shot"
 OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"
 OPTION_LINKED_BEAN_WEIGHT_ENTITY = "linked_bean_weight_entity"
 OPTION_LINKED_COFFEE_NAME_ENTITY = "linked_coffee_name_entity"
+OPTION_LINKED_GRIND_SETTING_ENTITY = "linked_grind_setting_entity"
+OPTION_LINKED_BREW_TEMPERATURE_ENTITY = "linked_brew_temperature_entity"
 
 # Auto-Stop Feature Option Keys
 OPTION_ENABLE_AUTO_STOP_FLOW_CUTOFF = "enable_auto_stop_flow_cutoff"
@@ -60,6 +62,8 @@ class BookooConfig:
     min_shot_duration: int
     linked_bean_weight_entity: str | None
     linked_coffee_name_entity: str | None
+    linked_grind_setting_entity: str | None
+    linked_brew_temperature_entity: str | None
 
     enable_auto_stop_flow_cutoff: bool
     auto_stop_pre_infusion_ignore_duration: float
@@ -83,6 +87,10 @@ class BookooConfig:
             min_shot_duration=options.get(OPTION_MIN_SHOT_DURATION, 10),
             linked_bean_weight_entity=options.get(OPTION_LINKED_BEAN_WEIGHT_ENTITY),
             linked_coffee_name_entity=options.get(OPTION_LINKED_COFFEE_NAME_ENTITY),
+            linked_grind_setting_entity=options.get(OPTION_LINKED_GRIND_SETTING_ENTITY),
+            linked_brew_temperature_entity=options.get(
+                OPTION_LINKED_BREW_TEMPERATURE_ENTITY
+            ),
             enable_auto_stop_flow_cutoff=options.get(
                 OPTION_ENABLE_AUTO_STOP_FLOW_CUTOFF, False
             ),

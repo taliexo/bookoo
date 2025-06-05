@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import collections
 import logging
+import statistics
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from pydantic import ValidationError
 
@@ -56,6 +59,12 @@ class SessionManager:
             None  # This will be assigned in stop_session
         )
 
+        # Auto-stop flow cutoff state
+        self._auto_stop_flow_stable_start_time: datetime | None = None
+        self._auto_stop_flow_below_cutoff_start_time: datetime | None = None
+
+        self._session_lock = asyncio.Lock()
+
     def _reset_internal_session_state(self) -> None:
         """Internal helper to reset session-specific state variables."""
         self.is_shot_active = False
@@ -65,80 +74,94 @@ class SessionManager:
         self.session_scale_timer_profile = collections.deque(maxlen=MAX_PROFILE_POINTS)
         self.session_input_parameters = {}
         self.session_start_trigger = None
+        self._auto_stop_flow_stable_start_time = None
+        self._auto_stop_flow_below_cutoff_start_time = None
         # self.last_shot_data is intentionally not cleared here
 
-    async def start_session(self, trigger: str) -> None:
-        """Starts a new shot session.
-
-        Args:
-            trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
-        """
-        # This block was incorrectly modified by the previous tool call and is being reverted/ignored.
-        # The actual target for the first model_dump is later in the stop_session method.
-
-        if self.is_shot_active:
-            _LOGGER.warning(
-                "Attempted to start new shot (trigger: %s) but one is active.",
-                trigger,
-            )
+    def _read_linked_input_to_params(
+        self, entity_id: str | None, param_key: str, param_description: str
+    ) -> None:
+        """Reads a linked entity's state and adds it to session_input_parameters."""
+        if not entity_id:
             return
 
-        _LOGGER.info(
-            "%s: Starting new shot session, triggered by: %s",
-            self.coordinator.name,
-            trigger,
-        )
-        self._reset_internal_session_state()  # Clear previous session data before starting new
-        self.is_shot_active = True
-        self.session_start_time_utc = dt_util.utcnow()
-        self.session_start_trigger = trigger
-
-        # Read linked input_number/input_text entities
-        if self.coordinator.bookoo_config.linked_bean_weight_entity:
-            bean_weight_state = self.hass.states.get(
-                self.coordinator.bookoo_config.linked_bean_weight_entity
+        entity_state = self.hass.states.get(entity_id)
+        if entity_state and entity_state.state not in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            self.session_input_parameters[param_key] = entity_state.state
+            _LOGGER.debug(
+                "%s: Logged %s: %s from %s",
+                self.coordinator.name,
+                param_description,
+                entity_state.state,
+                entity_id,
             )
-            if bean_weight_state and bean_weight_state.state not in [
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ]:
-                self.session_input_parameters["bean_weight"] = bean_weight_state.state
-                _LOGGER.debug(
-                    "%s: Logged bean_weight: %s from %s",
-                    self.coordinator.name,
-                    bean_weight_state.state,
-                    self.coordinator.bookoo_config.linked_bean_weight_entity,
-                )
-            else:
-                _LOGGER.warning(
-                    "%s: Could not read state for linked bean weight entity: %s",
-                    self.coordinator.name,
-                    self.coordinator.bookoo_config.linked_bean_weight_entity,
-                )
-
-        if self.coordinator.bookoo_config.linked_coffee_name_entity:
-            coffee_name_state = self.hass.states.get(
-                self.coordinator.bookoo_config.linked_coffee_name_entity
+        else:
+            _LOGGER.warning(
+                "%s: Could not read state for linked %s entity: %s",
+                self.coordinator.name,
+                param_description,
+                entity_id,
             )
-            if coffee_name_state and coffee_name_state.state not in [
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ]:
-                self.session_input_parameters["coffee_name"] = coffee_name_state.state
-                _LOGGER.debug(
-                    "%s: Logged coffee_name: %s from %s",
-                    self.coordinator.name,
-                    coffee_name_state.state,
-                    self.coordinator.bookoo_config.linked_coffee_name_entity,
-                )
-            else:
+
+    async def start_session(self, trigger: str) -> None:
+        async with self._session_lock:
+            """Starts a new shot session.
+
+            Args:
+                trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
+            """
+            # This block was incorrectly modified by the previous tool call and is being reverted/ignored.
+            # The actual target for the first model_dump is later in the stop_session method.
+
+            if self.is_shot_active:
                 _LOGGER.warning(
-                    "%s: Could not read state for linked coffee name entity: %s",
-                    self.coordinator.name,
-                    self.coordinator.bookoo_config.linked_coffee_name_entity,
+                    "Attempted to start new shot (trigger: %s) but one is active. This will now raise an error to the user.",
+                    trigger,
                 )
+                raise HomeAssistantError(translation_key="shot_already_active")
+
+            _LOGGER.info(
+                "%s: Starting new shot session, triggered by: %s",
+                self.coordinator.name,
+                trigger,
+            )
+            self._reset_internal_session_state()  # Clear previous session data before starting new
+            self.is_shot_active = True
+            self.session_start_time_utc = dt_util.utcnow()
+            self.session_start_trigger = trigger
+            self._auto_stop_flow_stable_start_time = None
+            self._auto_stop_flow_below_cutoff_start_time = None
+
+            self._read_linked_entities()
+
         # Coordinator will handle resetting its own realtime analytics and updating listeners
         self.coordinator.async_update_listeners()  # Notify HA of state change (shot active)
+
+    def _read_linked_entities(self) -> None:
+        """Reads linked entities and adds their states to session_input_parameters."""
+        self._read_linked_input_to_params(
+            self.coordinator.bookoo_config.linked_bean_weight_entity,
+            "bean_weight",
+            "bean weight",
+        )
+        self._read_linked_input_to_params(
+            self.coordinator.bookoo_config.linked_coffee_name_entity,
+            "coffee_name",
+            "coffee name",
+        )
+        self._read_linked_input_to_params(
+            self.coordinator.bookoo_config.linked_grind_setting_entity,
+            "grind_setting",
+            "grind setting",
+        )
+        self._read_linked_input_to_params(
+            self.coordinator.bookoo_config.linked_brew_temperature_entity,
+            "brew_temperature",
+            "brew temperature",
+        )
 
     def _determine_shot_status_and_duration(
         self,
@@ -202,24 +225,25 @@ class SessionManager:
         self,
     ) -> dict[str, Any]:
         """Calculates detailed analytics for a completed shot."""
-        # analyzer = self.coordinator.shot_analyzer # Not used for now as methods are missing
+        analyzer = self.coordinator.shot_analyzer
         final_weight = (
-            self.session_weight_profile[-1][1] if self.session_weight_profile else 0.0
+            self.session_weight_profile[-1].weight
+            if self.session_weight_profile
+            else 0.0
         )
-        # avg_flow = analyzer.calculate_average_flow_rate(list(self.session_flow_profile))
-        # peak_flow = analyzer.calculate_peak_flow_rate(list(self.session_flow_profile))
-        # time_to_first_flow = analyzer.calculate_time_to_first_flow(
-        #     list(self.session_flow_profile)
-        # )
-        # time_to_peak_flow = analyzer.calculate_time_to_peak_flow(
-        #     list(self.session_flow_profile)
-        # )
+
+        flow_profile_list = list(self.session_flow_profile)
+
+        avg_flow = analyzer.calculate_average_flow_rate(flow_profile_list)
+        peak_flow = analyzer.calculate_peak_flow_rate(flow_profile_list)
+        time_to_first_flow = analyzer.calculate_time_to_first_flow(flow_profile_list)
+        time_to_peak_flow = analyzer.calculate_time_to_peak_flow(flow_profile_list)
         return {
             "final_weight_grams": round(final_weight, 2),
-            "average_flow_rate_gps": 0.0,  # Default due to missing ShotAnalyzer method
-            "peak_flow_rate_gps": 0.0,  # Default due to missing ShotAnalyzer method
-            "time_to_first_flow_seconds": None,  # Default due to missing ShotAnalyzer method
-            "time_to_peak_flow_seconds": None,  # Default due to missing ShotAnalyzer method
+            "average_flow_rate_gps": avg_flow,
+            "peak_flow_rate_gps": peak_flow,
+            "time_to_first_flow_seconds": time_to_first_flow,
+            "time_to_peak_flow_seconds": time_to_peak_flow,
         }
 
     def _prepare_completed_shot_data(
@@ -324,23 +348,58 @@ class SessionManager:
                 ),  # Use model_dump for Pydantic models
             )
 
-            # Fire Home Assistant event
-            self.hass.bus.async_fire(
-                f"{self.coordinator.config_entry.domain}_shot_completed",
-                validated_shot_data.model_dump(mode="json"),
-            )
+            storage_attempted = False
+            storage_successful = False
 
-            # Store shot record if not aborted as too short (or always store, depending on preference)
-            # Current logic implies aborted_too_short also gets stored with minimal data.
-            validated_data_for_storage: BookooShotCompletedEventDataModel = (
-                validated_shot_data
-            )
-            await async_add_shot_record(self.hass, validated_data_for_storage)
-            _LOGGER.info(
-                "%s: Shot (status: %s) data stored and event fired.",
-                self.coordinator.name,
-                shot_status,
-            )
+            if shot_status != "aborted_too_short":
+                storage_attempted = True
+                try:
+                    await async_add_shot_record(self.hass, validated_shot_data)
+                    storage_successful = True
+                    _LOGGER.info(
+                        "%s: Shot (status: %s) data stored successfully.",
+                        self.coordinator.name,
+                        shot_status,
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "%s: Failed to store shot record (status: %s): %s. Event will still be fired.",
+                        self.coordinator.name,
+                        shot_status,
+                        e,
+                        exc_info=True,
+                    )
+            else:
+                _LOGGER.info(
+                    "%s: Shot was aborted too short (status: %s), not saving to history.",
+                    self.coordinator.name,
+                    shot_status,
+                )
+                # For aborted_too_short, we didn't attempt storage, so consider it 'successful' for event firing logic
+                storage_successful = True
+
+            # Fire event with validated data if storage was successful or not attempted (for aborted_too_short)
+            if storage_successful:
+                self.hass.bus.async_fire(
+                    f"{self.coordinator.config_entry.domain}_shot_completed",
+                    validated_shot_data.model_dump(mode="json"),
+                )
+                _LOGGER.debug(
+                    "%s: Fired %s event with data: %s (Storage attempted: %s, Storage successful: %s)",
+                    self.coordinator.name,
+                    f"{self.coordinator.config_entry.domain}_shot_completed",
+                    validated_shot_data.model_dump(mode="json"),
+                    storage_attempted,
+                    storage_successful if storage_attempted else "N/A",
+                )
+            else:
+                # This case means storage was attempted but failed
+                _LOGGER.warning(
+                    "%s: Shot event NOT fired due to storage failure for shot (status: %s) starting %s.",
+                    self.coordinator.name,
+                    shot_status,
+                    validated_shot_data.start_time_utc,
+                )
 
         except ValidationError as e:
             _LOGGER.error(
@@ -359,49 +418,50 @@ class SessionManager:
             )
 
     async def stop_session(self, stop_reason: str) -> None:
-        """Stops the current shot session, calculates metrics, stores data, and fires an event.
+        async with self._session_lock:
+            """Stops the current shot session, calculates metrics, stores data, and fires an event.
 
-        Args:
-            stop_reason: A string describing why the shot was stopped (e.g., 'service', 'disconnected', 'auto_flow_cutoff').
-        """
-        if not self.is_shot_active or not self.session_start_time_utc:
-            _LOGGER.debug(
-                "%s: Stop session called but no active session or start time found.",
-                self.coordinator.name,
+            Args:
+                stop_reason: A string describing why the shot was stopped (e.g., 'service', 'disconnected', 'auto_flow_cutoff').
+            """
+            if not self.is_shot_active or not self.session_start_time_utc:
+                _LOGGER.debug(
+                    "%s: Stop session called but no active session or start time found.",
+                    self.coordinator.name,
+                )
+                return
+
+            current_session_start_time_utc = self.session_start_time_utc
+            current_time = dt_util.utcnow()
+
+            shot_status, duration_seconds = self._determine_shot_status_and_duration(
+                stop_reason, current_session_start_time_utc, current_time
             )
-            return
 
-        current_session_start_time_utc = self.session_start_time_utc
-        current_time = dt_util.utcnow()
+            _LOGGER.info(
+                "%s: Stopping shot session (reason: %s). Status: %s. Duration: %.2f seconds.",
+                self.coordinator.name,
+                stop_reason,
+                shot_status,
+                duration_seconds,
+            )
 
-        shot_status, duration_seconds = self._determine_shot_status_and_duration(
-            stop_reason, current_session_start_time_utc, current_time
-        )
+            # Prepare base data for the event
+            start_time_iso = current_session_start_time_utc.isoformat()
+            end_time_iso = current_time.isoformat()
 
-        _LOGGER.info(
-            "%s: Stopping shot session (reason: %s). Status: %s. Duration: %.2f seconds.",
-            self.coordinator.name,
-            stop_reason,
-            shot_status,
-            duration_seconds,
-        )
-
-        # Prepare base data for the event
-        start_time_iso = current_session_start_time_utc.isoformat()
-        end_time_iso = current_time.isoformat()
-
-        raw_event_data: dict[str, Any] = {
-            "device_id": self.coordinator.config_entry.unique_id
-            or self.coordinator.config_entry.entry_id,
-            "unique_shot_id": f"{start_time_iso}_{self.coordinator.config_entry.unique_id or self.coordinator.config_entry.entry_id}",
-            "start_time_utc": start_time_iso,
-            "end_time_utc": end_time_iso,
-            "duration_seconds": duration_seconds,
-            "status": shot_status,
-            "start_trigger": self.session_start_trigger,
-            "stop_reason": stop_reason,
-            "input_parameters": dict(self.session_input_parameters),
-        }
+            raw_event_data: dict[str, Any] = {
+                "device_id": self.coordinator.config_entry.unique_id
+                or self.coordinator.config_entry.entry_id,
+                "unique_shot_id": f"{start_time_iso}_{self.coordinator.config_entry.unique_id or self.coordinator.config_entry.entry_id}",
+                "start_time_utc": start_time_iso,
+                "end_time_utc": end_time_iso,
+                "duration_seconds": duration_seconds,
+                "status": shot_status,
+                "start_trigger": self.session_start_trigger,
+                "stop_reason": stop_reason,
+                "input_parameters": dict(self.session_input_parameters),
+            }
 
         final_weight_grams = (
             self.coordinator.scale.weight
@@ -432,14 +492,124 @@ class SessionManager:
                 self.session_scale_timer_profile
             )
 
-        # TODO: Re-evaluate auto-stop logic if it needs to modify shot_status or other metrics
-        # before they are finalized in raw_event_data.
+        # Auto-stop logic (e.g., by flow cutoff) is now handled proactively in add_flow_data.
+        # This ensures stop_session is called with the correct reason when conditions are met.
 
         await self._finalize_and_store_shot(raw_event_data, shot_status)
 
         self._reset_internal_session_state()
         self.coordinator._reset_realtime_analytics()
         self.coordinator.async_update_listeners()
+
+    def _check_auto_stop_flow_cutoff(
+        self, current_elapsed_time: float, current_flow_rate: float
+    ) -> None:
+        """Checks and triggers auto-stop based on flow cutoff conditions."""
+        if (
+            not self.is_shot_active
+            or not self.coordinator.bookoo_config.enable_auto_stop_flow_cutoff
+        ):
+            return
+
+        config = self.coordinator.bookoo_config
+        now = dt_util.utcnow()
+
+        # Ignore initial phase
+        if current_elapsed_time < config.auto_stop_pre_infusion_ignore_duration:
+            # Reset stability and cutoff timers if we are still in ignore phase
+            self._auto_stop_flow_stable_start_time = None
+            self._auto_stop_flow_below_cutoff_start_time = None
+            return
+
+        # --- Flow Stability Check ---
+        if self._auto_stop_flow_stable_start_time is None:
+            # Check if flow is currently above the minimum for stability
+            if current_flow_rate >= config.auto_stop_min_flow_for_stability:
+                # Potential start of stable phase, gather recent data points for CV calculation
+                # We need enough data points that occurred *after* pre_infusion_ignore_duration
+                relevant_flow_points = [
+                    dp.flow_rate
+                    for dp in self.session_flow_profile
+                    if dp.elapsed_time >= config.auto_stop_pre_infusion_ignore_duration
+                    and dp.flow_rate is not None
+                    and dp.flow_rate >= config.auto_stop_min_flow_for_stability
+                ]
+
+                # Ensure we have enough data points and they span the min_duration_for_stability
+                if (
+                    relevant_flow_points and len(relevant_flow_points) >= 3
+                ):  # Need at least 2 for stdev, 3 for better measure
+                    first_relevant_dp_time = next(
+                        (
+                            dp.elapsed_time
+                            for dp in self.session_flow_profile
+                            if dp.elapsed_time
+                            >= config.auto_stop_pre_infusion_ignore_duration
+                            and dp.flow_rate is not None
+                            and dp.flow_rate >= config.auto_stop_min_flow_for_stability
+                        ),
+                        current_elapsed_time,
+                    )
+                    duration_of_relevant_flow = (
+                        current_elapsed_time - first_relevant_dp_time
+                    )
+
+                    if (
+                        duration_of_relevant_flow
+                        >= config.auto_stop_min_duration_for_stability
+                    ):
+                        mean_flow = statistics.mean(relevant_flow_points)
+                        std_dev = (
+                            statistics.stdev(relevant_flow_points)
+                            if len(relevant_flow_points) > 1
+                            else 0
+                        )
+                        cv = (
+                            (std_dev / mean_flow) * 100
+                            if mean_flow > 0
+                            else float("inf")
+                        )
+
+                        if cv <= config.auto_stop_max_flow_variance_for_stability:
+                            _LOGGER.debug(
+                                "%s: Auto-stop flow considered stable. CV: %.2f%%, Mean: %.2fg/s, Duration: %.2fs",
+                                self.coordinator.name,
+                                cv,
+                                mean_flow,
+                                duration_of_relevant_flow,
+                            )
+                            self._auto_stop_flow_stable_start_time = now
+                        # else: # Flow is not stable yet, wait for more data
+                    # else: # Not enough duration of stable flow yet
+                # else: # Not enough data points for stability check yet
+            # else: # Flow is below stability threshold, reset stability timer
+            #    self._auto_stop_flow_stable_start_time = None # This would reset on any dip, might be too sensitive. Let's only set it once stable.
+
+        # --- Flow Cutoff Check (only if flow has been stable) ---
+        if self._auto_stop_flow_stable_start_time is not None:
+            if current_flow_rate < config.auto_stop_flow_cutoff_threshold:
+                if self._auto_stop_flow_below_cutoff_start_time is None:
+                    self._auto_stop_flow_below_cutoff_start_time = now
+
+                if (
+                    now - self._auto_stop_flow_below_cutoff_start_time
+                    >= dt_util.timedelta(
+                        seconds=config.auto_stop_min_duration_for_cutoff
+                    )
+                ):
+                    _LOGGER.info(
+                        "%s: Auto-stopping shot due to flow cutoff. Flow %.2fg/s < threshold %.2fg/s for %.2fs",
+                        self.coordinator.name,
+                        current_flow_rate,
+                        config.auto_stop_flow_cutoff_threshold,
+                        config.auto_stop_min_duration_for_cutoff,
+                    )
+                    self.hass.async_create_task(
+                        self.stop_session(stop_reason="auto_stop_flow_cutoff")
+                    )
+            else:
+                # Flow went back above cutoff, reset the cutoff timer
+                self._auto_stop_flow_below_cutoff_start_time = None
 
     def add_flow_data(self, elapsed_time: float, flow_rate: float) -> None:
         """Adds a flow rate data point to the current session's profile.
@@ -451,8 +621,11 @@ class SessionManager:
         """Adds a flow rate data point to the current session."""
         if self.is_shot_active:
             self.session_flow_profile.append(
-                FlowDataPoint(elapsed_time=elapsed_time, flow_rate=flow_rate)
+                FlowDataPoint(
+                    elapsed_time=round(elapsed_time, 2), flow_rate=round(flow_rate, 2)
+                )
             )
+        self._check_auto_stop_flow_cutoff(elapsed_time, flow_rate)
 
     def add_weight_data(self, elapsed_time: float, weight: float) -> None:
         """Adds a weight data point to the current session's profile.

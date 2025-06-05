@@ -32,13 +32,17 @@
         "data": {
           "minimum_shot_duration_seconds": "Minimum Shot Duration (seconds)",
           "linked_bean_weight_entity": "Bean Weight Input Entity",
-          "linked_coffee_name_entity": "Coffee Name Input Entity"
+          "linked_coffee_name_entity": "Coffee Name Input Entity",
+          "linked_grind_setting_entity": "Grind Setting Input Entity",
+          "linked_brew_temperature_entity": "Brew Temperature Input Entity"
         },
         "description": "Configure parameters for espresso shot logging. Create Input Number and Input Text helpers in Home Assistant for bean weight, coffee name, etc., and link them here.",
         "data_description": {
           "minimum_shot_duration_seconds": "Minimum duration (in seconds) for a shot to be considered valid and logged.",
           "linked_bean_weight_entity": "Select an 'input_number' helper entity to record the bean weight for each shot.",
-          "linked_coffee_name_entity": "Select an 'input_text' helper entity to record the coffee name or type for each shot."
+          "linked_coffee_name_entity": "Select an 'input_text' helper entity to record the coffee name or type for each shot.",
+          "linked_grind_setting_entity": "Select an 'input_text' helper to record the grind setting for each shot.",
+          "linked_brew_temperature_entity": "Select an 'input_number' helper to record the brew temperature (e.g., in °C or °F) for each shot."
         }
       }
     },
@@ -122,5 +126,17 @@
         "name": "Current Shot Quality Score"
       }
     }
+  },
+  "errors": {
+    "cannot_connect": "Failed to connect to Bookoo scale: {error_details}",
+    "connection_timeout": "Timeout connecting to Bookoo scale: {error_details}",
+    "device_not_found": "Bookoo scale not found at address: {address}",
+    "unexpected_connection_error": "Unexpected error connecting to Bookoo scale: {error_details}",
+    "update_failed_connection": "Failed to connect to Bookoo scale for update: {error_details}",
+    "service_call_failed": "Failed to execute {service_name}: {error_details}",
+    "scale_disconnected_active_shot": "Scale disconnected during an active shot. Session ended automatically.",
+    "queue_processor_fail_disconnected": "Cannot manage data queue because the scale is not connected.",
+    "queue_processor_task_exception": "Scale data processing task ended unexpectedly: {exception_details}",
+    "shot_already_active": "Cannot start a new shot session because one is already in progress."
   }
 }

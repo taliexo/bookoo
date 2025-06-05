@@ -203,3 +203,57 @@ class ShotAnalyzer:
         uniformity_score = max(0.0, 1.0 - coeff_of_variation)
 
         return round(uniformity_score, 2)
+
+    def calculate_average_flow_rate(self, flow_profile: FlowProfile) -> float:
+        """Calculates the average flow rate from the flow profile."""
+        if not flow_profile:
+            return 0.0
+
+        flows = [
+            dp.flow_rate
+            for dp in flow_profile
+            if dp.flow_rate is not None and dp.flow_rate > 0
+        ]  # Consider only positive flow
+        if not flows:
+            return 0.0
+
+        return round(sum(flows) / len(flows), 2)
+
+    def calculate_peak_flow_rate(self, flow_profile: FlowProfile) -> float:
+        """Calculates the peak flow rate from the flow profile."""
+        if not flow_profile:
+            return 0.0
+
+        flows = [dp.flow_rate for dp in flow_profile if dp.flow_rate is not None]
+        if not flows:
+            return 0.0
+
+        return round(max(flows), 2)
+
+    def calculate_time_to_first_flow(self, flow_profile: FlowProfile) -> float | None:
+        """Calculates the time to the first significant flow."""
+        significant_flow_threshold = self.config.channeling_significant_flow_threshold
+
+        for dp in flow_profile:
+            if dp.flow_rate is not None and dp.flow_rate > significant_flow_threshold:
+                return round(dp.elapsed_time, 2)
+        return None
+
+    def calculate_time_to_peak_flow(self, flow_profile: FlowProfile) -> float | None:
+        """Calculates the time to reach the peak flow rate."""
+        if not flow_profile:
+            return None
+
+        peak_flow = -1.0
+        time_at_peak_flow: float | None = None
+
+        valid_flow_points = [dp for dp in flow_profile if dp.flow_rate is not None]
+        if not valid_flow_points:
+            return None
+
+        for dp in valid_flow_points:
+            if dp.flow_rate > peak_flow:
+                peak_flow = dp.flow_rate
+                time_at_peak_flow = dp.elapsed_time
+
+        return round(time_at_peak_flow, 2) if time_at_peak_flow is not None else None

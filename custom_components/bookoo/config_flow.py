@@ -55,7 +55,9 @@ from .const import (
     OPTION_CONNECT_TIMEOUT,
     OPTION_ENABLE_AUTO_STOP_FLOW_CUTOFF,
     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
+    OPTION_LINKED_BREW_TEMPERATURE_ENTITY,
     OPTION_LINKED_COFFEE_NAME_ENTITY,
+    OPTION_LINKED_GRIND_SETTING_ENTITY,
     OPTION_MIN_SHOT_DURATION,
 )
 
@@ -257,7 +259,7 @@ class BookooOptionsFlowHandler(OptionsFlow):
                     default=current_options.get(
                         OPTION_MIN_SHOT_DURATION, 10
                     ),  # Default to 10s
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=300.0)),
                 vol.Optional(
                     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
                     default=current_options.get(
@@ -274,6 +276,26 @@ class BookooOptionsFlowHandler(OptionsFlow):
                 ): EntitySelector(
                     EntitySelectorConfig(domain="input_text", multiple=False)
                 ),
+                vol.Optional(
+                    OPTION_LINKED_GRIND_SETTING_ENTITY,
+                    default=current_options.get(
+                        OPTION_LINKED_GRIND_SETTING_ENTITY, vol.UNDEFINED
+                    ),
+                ): EntitySelector(
+                    EntitySelectorConfig(
+                        domain="input_text", multiple=False
+                    )  # Assuming text for flexibility
+                ),
+                vol.Optional(
+                    OPTION_LINKED_BREW_TEMPERATURE_ENTITY,
+                    default=current_options.get(
+                        OPTION_LINKED_BREW_TEMPERATURE_ENTITY, vol.UNDEFINED
+                    ),
+                ): EntitySelector(
+                    EntitySelectorConfig(
+                        domain="input_number", multiple=False
+                    )  # Assuming numeric input
+                ),
                 # Auto-Stop Options
                 vol.Optional(
                     OPTION_ENABLE_AUTO_STOP_FLOW_CUTOFF,
@@ -287,14 +309,14 @@ class BookooOptionsFlowHandler(OptionsFlow):
                         OPTION_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION,
                         DEFAULT_AUTO_STOP_PRE_INFUSION_IGNORE_DURATION,
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=60.0)),
                 vol.Optional(
                     OPTION_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
                     default=current_options.get(
                         OPTION_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
                         DEFAULT_AUTO_STOP_MIN_FLOW_FOR_STABILITY,
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
                 vol.Optional(
                     OPTION_AUTO_STOP_MAX_FLOW_VARIANCE_FOR_STABILITY,
                     default=current_options.get(
@@ -308,34 +330,34 @@ class BookooOptionsFlowHandler(OptionsFlow):
                         OPTION_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
                         DEFAULT_AUTO_STOP_MIN_DURATION_FOR_STABILITY,
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=60.0)),
                 vol.Optional(
                     OPTION_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
                     default=current_options.get(
                         OPTION_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
                         DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD,
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
                 vol.Optional(
                     OPTION_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
                     default=current_options.get(
                         OPTION_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
                         DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF,
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=60.0)),
                 # Bluetooth Timeout Options
                 vol.Optional(
                     OPTION_CONNECT_TIMEOUT,
                     default=current_options.get(
                         OPTION_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=120.0)),
                 vol.Optional(
                     OPTION_COMMAND_TIMEOUT,
                     default=current_options.get(
                         OPTION_COMMAND_TIMEOUT, DEFAULT_COMMAND_TIMEOUT
                     ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=1.0)),
+                ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=60.0)),
             }
         )
 
