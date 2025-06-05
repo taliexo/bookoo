@@ -173,11 +173,23 @@ class SessionManager:
         duration_seconds = (
             current_time - current_session_start_time_utc
         ).total_seconds()
-        min_duration = self.coordinator.bookoo_config.min_shot_duration
-        shot_status = "completed"
+
+        config = self.coordinator.bookoo_config
+        min_duration = config.min_shot_duration
+        max_duration = config.max_shot_duration
+
+        shot_status = "completed"  # Default
 
         if stop_reason == "disconnected":
             shot_status = "aborted_disconnected"
+        elif max_duration > 0 and duration_seconds > max_duration:
+            _LOGGER.info(
+                "%s: Shot duration (%.2f s) > max configured (%s s). Aborting.",
+                self.coordinator.name,
+                duration_seconds,
+                max_duration,
+            )
+            shot_status = "aborted_too_long"
         elif (
             stop_reason not in ["ha_service_stop_forced"]
             and duration_seconds < min_duration

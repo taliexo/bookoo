@@ -17,6 +17,7 @@ SERVICE_STOP_SHOT = "stop_shot"
 
 # Option Keys
 OPTION_MIN_SHOT_DURATION = "minimum_shot_duration_seconds"
+OPTION_MAX_SHOT_DURATION = "maximum_shot_duration_seconds"
 OPTION_LINKED_BEAN_WEIGHT_ENTITY = "linked_bean_weight_entity"
 OPTION_LINKED_COFFEE_NAME_ENTITY = "linked_coffee_name_entity"
 OPTION_LINKED_GRIND_SETTING_ENTITY = "linked_grind_setting_entity"
@@ -51,6 +52,7 @@ DEFAULT_AUTO_STOP_FLOW_CUTOFF_THRESHOLD = 0.2  # g/s
 DEFAULT_AUTO_STOP_MIN_DURATION_FOR_CUTOFF = 1.0  # seconds
 
 # Default values for Bluetooth timeouts
+DEFAULT_MAX_SHOT_DURATION = 120  # seconds
 DEFAULT_CONNECT_TIMEOUT = 15.0  # seconds
 DEFAULT_COMMAND_TIMEOUT = 10.0  # seconds
 
@@ -60,6 +62,7 @@ class BookooConfig:
     """Typed configuration for the Bookoo integration."""
 
     min_shot_duration: int
+    max_shot_duration: int
     linked_bean_weight_entity: str | None
     linked_coffee_name_entity: str | None
     linked_grind_setting_entity: str | None
@@ -85,6 +88,9 @@ class BookooConfig:
         options = entry.options
         return cls(
             min_shot_duration=options.get(OPTION_MIN_SHOT_DURATION, 10),
+            max_shot_duration=options.get(
+                OPTION_MAX_SHOT_DURATION, DEFAULT_MAX_SHOT_DURATION
+            ),
             linked_bean_weight_entity=options.get(OPTION_LINKED_BEAN_WEIGHT_ENTITY),
             linked_coffee_name_entity=options.get(OPTION_LINKED_COFFEE_NAME_ENTITY),
             linked_grind_setting_entity=options.get(OPTION_LINKED_GRIND_SETTING_ENTITY),

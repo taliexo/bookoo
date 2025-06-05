@@ -31,6 +31,7 @@
         "title": "Bookoo Scale Espresso Options",
         "data": {
           "minimum_shot_duration_seconds": "Minimum Shot Duration (seconds)",
+          "maximum_shot_duration_seconds": "Maximum Shot Duration (seconds)",
           "linked_bean_weight_entity": "Bean Weight Input Entity",
           "linked_coffee_name_entity": "Coffee Name Input Entity",
           "linked_grind_setting_entity": "Grind Setting Input Entity",
@@ -39,6 +40,7 @@
         "description": "Configure parameters for espresso shot logging. Create Input Number and Input Text helpers in Home Assistant for bean weight, coffee name, etc., and link them here.",
         "data_description": {
           "minimum_shot_duration_seconds": "Minimum duration (in seconds) for a shot to be considered valid and logged.",
+          "maximum_shot_duration_seconds": "Maximum duration (in seconds) for a shot. If exceeded, the shot will be automatically stopped and marked as 'aborted_too_long'. Set to 0 to disable.",
           "linked_bean_weight_entity": "Select an 'input_number' helper entity to record the bean weight for each shot.",
           "linked_coffee_name_entity": "Select an 'input_text' helper entity to record the coffee name or type for each shot.",
           "linked_grind_setting_entity": "Select an 'input_text' helper to record the grind setting for each shot.",

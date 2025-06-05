@@ -59,6 +59,8 @@ from .const import (
     OPTION_LINKED_COFFEE_NAME_ENTITY,
     OPTION_LINKED_GRIND_SETTING_ENTITY,
     OPTION_MIN_SHOT_DURATION,
+    OPTION_MAX_SHOT_DURATION,  # Added
+    DEFAULT_MAX_SHOT_DURATION,  # Added
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -257,9 +259,20 @@ class BookooOptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     OPTION_MIN_SHOT_DURATION,
                     default=current_options.get(
-                        OPTION_MIN_SHOT_DURATION, 10
-                    ),  # Default to 10s
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=300.0)),
+                        OPTION_MIN_SHOT_DURATION,
+                        10,  # Default from const is int
+                    ),
+                ): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=300)
+                ),  # Changed to int
+                vol.Optional(
+                    OPTION_MAX_SHOT_DURATION,
+                    default=current_options.get(
+                        OPTION_MAX_SHOT_DURATION, DEFAULT_MAX_SHOT_DURATION
+                    ),
+                ): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=600)
+                ),  # Max 10 minutes, min 0 (disable)
                 vol.Optional(
                     OPTION_LINKED_BEAN_WEIGHT_ENTITY,
                     default=current_options.get(
