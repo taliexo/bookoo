@@ -20,6 +20,7 @@ Based on the original documentation at https://github.com/BooKooCode/OpenSource/
         *   User-defined parameters (e.g., bean weight, coffee name, grind setting) linked from `input_*` helper entities.
     *   Fires a `bookoo_shot_completed` event with a comprehensive payload upon shot completion.
 *   **Configurable Minimum Shot Duration:** Filter out accidental or very short timer activations that aren't actual shots.
+*   **Configurable Maximum Shot Duration:** Automatically stop and flag shots that run excessively long.
 *   **Linkable Input Helpers:** Associate your own `input_number`, `input_text`, etc., helpers with each shot to record parameters like bean dose, coffee type, grind setting, and more.
 
 ## Installation
@@ -45,13 +46,21 @@ To access advanced espresso shot logging features, configure the integration's o
 
 *   **Minimum Shot Duration (seconds):**
     *   Defines the minimum duration (in seconds) for a shot to be considered valid and trigger the `bookoo_shot_completed` event. This helps filter out brief timer activations that aren't actual espresso shots.
-    *   Default: 10 seconds (as per current coordinator code). Set to 0 to record all timer events.
+    *   Default: 10 seconds. Set to 0 to record all timer events if minimum duration is the only concern.
+*   **Maximum Shot Duration (seconds):**
+    *   Defines the maximum duration (in seconds) for a shot. If a shot exceeds this duration, it will be automatically stopped and its status recorded as "aborted_too_long".
+    *   This is useful for preventing excessively long recordings due to issues like forgetting to stop the timer or a scale malfunction.
+    *   Default: 120 seconds (2 minutes). Set to 0 to disable the maximum duration check.
 *   **Linked Input Entities:**
     *   This section allows you to link existing Home Assistant `input_number`, `input_text`, or other helper entities to your espresso shots. When a shot is started, the current values of these linked entities will be captured and included in the `bookoo_shot_completed` event data.
     *   **How to use:**
         1.  Create your desired helper entities in Home Assistant (e.g., an `input_number.espresso_bean_dose` for bean weight, `input_text.espresso_coffee_name` for the coffee blend).
         2.  In the Bookoo integration options, select the corresponding helper entity from the dropdown list for each parameter you want to track (e.g., "Bean Weight Input Entity", "Coffee Name Input Entity").
     *   The values will be available in the `input_parameters` dictionary of the `bookoo_shot_completed` event data (e.g., `event_data.input_parameters.bean_weight`).
+*   **Auto-Stop Feature Options:**
+    *   Configure parameters for automatically stopping a shot based on flow rate characteristics (e.g., when flow drops below a certain threshold for a set duration after a stable extraction phase). This can help automate the end of a shot.
+*   **Bluetooth Timeouts:**
+    *   Configure timeouts for Bluetooth connection attempts and command executions to fine-tune reliability in your environment.
 
 ## Entities
 
@@ -67,7 +76,7 @@ This integration provides the following entities:
 *   **NEW - Last Shot Duration (`sensor.bookoo_last_shot_duration`):** Duration of the last completed espresso shot (seconds).
 *   **NEW - Last Shot Final Weight (`sensor.bookoo_last_shot_final_weight`):** Final beverage weight of the last completed shot (grams).
 *   **NEW - Last Shot Start Time (`sensor.bookoo_last_shot_start_time`):** UTC timestamp when the last shot started.
-*   **NEW - Last Shot Status (`sensor.bookoo_last_shot_status`):** Status of the last shot (e.g., "completed", "aborted_disconnected", "aborted_too_short").
+*   **NEW - Last Shot Status (`sensor.bookoo_last_shot_status`):** Status of the last shot (e.g., "completed", "aborted_disconnected", "aborted_too_short", "aborted_too_long").
 *   **NEW - Current Shot Channeling Status (`sensor.bookoo_current_shot_channeling_status`):** Real-time assessment of channeling during an active shot (e.g., "None", "Mild Channeling", "Moderate Channeling"). Updates live.
 *   **NEW - Current Shot Pre-infusion Duration (`sensor.bookoo_current_shot_pre_infusion_duration`):** Duration of the detected pre-infusion phase in seconds during an active shot. Updates live.
 *   **NEW - Current Shot Extraction Uniformity (`sensor.bookoo_current_shot_extraction_uniformity`):** A metric (typically 0-1) indicating the uniformity of the extraction based on flow rate analysis during an active shot. Updates live.
@@ -106,7 +115,7 @@ This integration provides the following services that can be called from automat
 This integration fires the following event:
 
 *   `bookoo_shot_completed`
-    *   **Description:** Fired when an espresso shot session is completed. This can be triggered automatically by the scale's auto-timer stop, manually via the `bookoo.stop_shot` service/button, or if the scale disconnects during an active shot. Shots that are shorter than the configured `Minimum Shot Duration` (and not due to disconnection or forced stop) will *not* fire this event but will update the 'Last Shot Status' sensor to 'aborted_too_short'.
+    *   **Description:** Fired when an espresso shot session is completed or terminated for reasons other than being too short. This can be triggered automatically by the scale's auto-timer stop, manually via the `bookoo.stop_shot` service/button, if the scale disconnects, or if the shot exceeds the configured `Maximum Shot Duration`. Shots that are shorter than the configured `Minimum Shot Duration` (and not due to disconnection or forced stop) will *not* fire this event but will update the 'Last Shot Status' sensor to 'aborted_too_short'.
     *   **Event Data (payload fields):**
         *   `device_id` (string): The Home Assistant device ID for the Bookoo scale.
         *   `entry_id` (string): The config entry ID for the Bookoo scale integration.
@@ -119,112 +128,8 @@ This integration fires the following event:
         *   `input_parameters` (dictionary): Key-value pairs of data captured from any linked input helper entities at the start of the shot. Keys are `bean_weight` and `coffee_name`. Example: `{"bean_weight": "18.0", "coffee_name": "Ethiopia Yirgacheffe"}`.
         *   `start_trigger` (string): Indicates how the shot was initiated (e.g., `"scale_auto"`, `"ha_service"`).
         *   `stop_reason` (string): Indicates how the shot was stopped (e.g., `"scale_auto_dict"` (for scale's auto-timer stop via decoded event), `"ha_service"`, `"disconnected"`).
-        *   `status` (string): The final status of the shot (e.g., `"completed"`, `"aborted_disconnected"`).
+        *   `status` (string): The final status of the shot (e.g., `"completed"`, `"aborted_disconnected"`, `"aborted_too_long"`).
         *   `average_flow_rate_gps` (float): Average flow rate in grams per second for the shot.
         *   `peak_flow_rate_gps` (float): Peak flow rate in grams per second observed during the shot.
         *   `time_to_first_flow_seconds` (float | null): Time in seconds from shot start until flow rate first exceeds a small threshold (e.g., 0.2 g/s). Can be `null` if no significant flow is detected.
         *   `time_to_peak_flow_seconds` (float | null): Time in seconds from shot start when the peak flow rate was achieved. Can be `null` if no flow profile data is available.
-
-## Example Automations
-
-### 1. Log Shot Data via MQTT
-
-A flexible way to log your espresso shot data is to publish it to an MQTT topic. From there, various tools (like Telegraf, Node-RED, or custom scripts) can subscribe to this topic and write the data to InfluxDB or other databases.
-
-**Example Automation: Publish Shot Data to MQTT**
-
-This automation will publish the full `EVENT_BOOKOO_SHOT_COMPLETED` event data as a JSON payload to a specified MQTT topic.
-
-```yaml
-alias: Publish Bookoo Espresso Shot to MQTT
-trigger:
-  - platform: event
-    event_type: bookoo_shot_completed
-action:
-  - service: mqtt.publish
-    data:
-      topic: "bookoo/shot/completed" # Choose your desired MQTT topic
-      payload_template: "{{ trigger.event.data | tojson }}" # Convert event data to JSON string
-      retain: false # Set to true if you want the last message to be retained
-```
-
-### 2. Send a Notification on Shot Completion
-
-```yaml
-automation:
-  - alias: "Notify on Espresso Shot Completion"
-    trigger:
-      - platform: event
-        event_type: bookoo_shot_completed
-    action:
-      - service: notify.mobile_app_your_phone # Replace with your notification service
-        data:
-          title: "Espresso Shot Completed!"
-          message: >
-            Shot duration: {{ trigger.event.data.duration_seconds }}s,
-            Weight: {{ trigger.event.data.final_weight_grams }}g,
-            Avg Flow: {{ trigger.event.data.average_flow_rate_gps }} g/s.
-            {{ trigger.event.data.input_parameters.coffee_name | default('') }}
-            ({{ trigger.event.data.input_parameters.bean_weight | default('?') }}g beans).
-```
-
-## Template Sensor Examples
-
-Leverage Home Assistant's template sensors to create customized sensors based on the data provided by the Bookoo integration. Here are a few examples to get you started. You would typically add these to your `configuration.yaml` under the `template:` section, or in a dedicated `templates.yaml` file.
-
-### 1. Shot Quality Assessment (Text)
-
-This sensor provides a human-readable assessment of the current espresso shot's quality based on the `sensor.bookoo_current_shot_quality_score` and `sensor.bookoo_current_shot_channeling_status`.
-
-```yaml
-template:
-  - sensor:
-      - name: "Bookoo Shot Quality Assessment"
-        unique_id: bookoo_shot_quality_assessment
-        icon: mdi:coffee-check-outline
-        state: >
-          {% set score = states('sensor.bookoo_current_shot_quality_score') | float(0) %}
-          {% set channeling = states('sensor.bookoo_current_shot_channeling_status') %}
-          {% set is_shot_active = is_state('binary_sensor.bookoo_shot_in_progress', 'on') %}
-
-          {% if not is_shot_active %}
-            Idle
-          {% elif score >= 90 and channeling == 'No Channeling' %}
-            Excellent! ({{ score | round(0) }}%)
-          {% elif score >= 80 and (channeling == 'No Channeling' or channeling == 'Mild Channeling') %}
-            Great Shot ({{ score | round(0) }}%){% if channeling == 'Mild Channeling' %} - Mild Channeling{% endif %}
-          {% elif score >= 70 %}
-            Good Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - {{ channeling }}{% endif %}
-          {% elif score >= 50 %}
-            Fair Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - {{ channeling }}. Consider grind/tamp.{% else %} - Consider grind/tamp.{% endif %}
-          {% elif score > 0 %}
-            Poor Shot ({{ score | round(0) }}%){% if channeling not in ['No Channeling', 'Unknown'] %} - Significant {{ channeling }}. Check puck prep.{% else %} - Check puck prep.{% endif %}
-          {% else %}
-            Awaiting Data
-          {% endif %}
-        attributes:
-          quality_score: "{{ states('sensor.bookoo_current_shot_quality_score') | float(None) }}"
-          channeling_status: "{{ states('sensor.bookoo_current_shot_channeling_status') }}"
-          shot_active: "{{ is_state('binary_sensor.bookoo_shot_in_progress', 'on') }}"
-```
-
-*(More template sensor examples can be added here.)*
-
-## Advanced Data Logging and Analysis
-
-For users looking to perform long-term trend analysis, create custom dashboards beyond Home Assistant's capabilities, or integrate shot data with other systems, the `bookoo_shot_completed` event provides all the necessary details.
-
-A common approach is to export this event data to an external database. The "Log Shot Data via MQTT" example automation shows one way to get this data out of Home Assistant. Once the data is on an MQTT topic (or sent via another method like a webhook):
-
-1.  **Choose a Data Store:** You can send the data to various types of databases:
-    *   **Time-series databases (TSDB):** Solutions like InfluxDB or Prometheus are ideal for recording time-stamped data like flow profiles and shot weights over time.
-    *   **SQL Databases:** PostgreSQL, MySQL, or SQLite can store structured shot data.
-    *   **NoSQL Databases:** Options like MongoDB can store the flexible JSON structure of the event data.
-    *   **Cloud Platforms:** Services like Google BigQuery, AWS Timestream, or Azure Data Explorer offer powerful analytics capabilities.
-
-2.  **Data Ingestion:** Use a tool or script to subscribe to your MQTT topic (or receive webhook data) and write it to your chosen database.
-    *   **Telegraf:** Can consume MQTT and output to many databases, including InfluxDB, Prometheus, Kafka, etc.
-    *   **Node-RED:** Offers nodes for MQTT, various databases, and HTTP requests, allowing for flexible data routing and transformation.
-    *   **Custom Scripts:** Python, Node.js, or other scripting languages can be used with appropriate MQTT and database client libraries.
-
-3.  **Analysis and Visualization:** Once your data is stored, you can use the querying language and visualization tools specific to your chosen database and platform (e.g., Grafana for InfluxDB/Prometheus, SQL queries, Python with Pandas/Matplotlib, R, or built-in tools of cloud platforms).
