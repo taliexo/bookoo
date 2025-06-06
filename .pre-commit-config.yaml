@@ -1,6 +1,6 @@
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0 # Or the latest stable version
+    rev: v5.0.0
     hooks:
     -   id: check-yaml
     -   id: end-of-file-fixer
@@ -10,7 +10,7 @@ repos:
     -   id: check-merge-conflict
     -   id: detect-private-key
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.5 # Or the latest stable ruff version
+    rev: v0.11.13
     hooks:
     -   id: ruff
         args: [--fix, --exit-non-zero-on-fix]
