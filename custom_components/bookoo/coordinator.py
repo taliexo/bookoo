@@ -534,7 +534,7 @@ class BookooCoordinator(
                 },
             ) from err
         if isinstance(err, BookooError):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "%s: %s - BookooError: %s", self.name, error_message_prefix, err
             )
             raise UpdateFailed(
