@@ -47,19 +47,19 @@ async def async_setup_bookoo_integration_perf(
 
     # Mock the BookooScale methods to be very fast or controlled
     with patch(
-        "custom_components.bookoo.aiobookoov2.BookooScale.connect",
+        "aiobookoov2.bookooscale.BookooScale.connect",
         new_callable=AsyncMock,
     ) as mock_connect:
         with patch(
-            "custom_components.bookoo.aiobookoov2.BookooScale.disconnect",
+            "aiobookoov2.bookooscale.BookooScale.disconnect",
             new_callable=AsyncMock,
         ):
             with patch(
-                "custom_components.bookoo.aiobookoov2.BookooScale.tare_and_start_timer",
+                "aiobookoov2.bookooscale.BookooScale.tare_and_start_timer",
                 new_callable=AsyncMock,
             ) as mock_tare_start:
                 with patch(
-                    "custom_components.bookoo.aiobookoov2.BookooScale.stop_timer",
+                    "aiobookoov2.bookooscale.BookooScale.stop_timer",
                     new_callable=AsyncMock,
                 ) as mock_stop_timer:
                     with patch(

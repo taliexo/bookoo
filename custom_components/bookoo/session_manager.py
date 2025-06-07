@@ -6,7 +6,7 @@ import asyncio
 import collections
 import logging
 import statistics
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -348,6 +348,9 @@ class SessionManager:
     ) -> None:
         """Validates, stores, and dispatches the shot data."""
         try:
+            # Add entry_id to the raw_event_data from the coordinator's config entry
+            raw_event_data["entry_id"] = self.coordinator.config_entry.entry_id
+
             validated_shot_data = BookooShotCompletedEventDataModel(
                 **dict(raw_event_data)
             )
@@ -603,11 +606,8 @@ class SessionManager:
                 if self._auto_stop_flow_below_cutoff_start_time is None:
                     self._auto_stop_flow_below_cutoff_start_time = now
 
-                if (
-                    now - self._auto_stop_flow_below_cutoff_start_time
-                    >= dt_util.timedelta(
-                        seconds=config.auto_stop_min_duration_for_cutoff
-                    )
+                if now - self._auto_stop_flow_below_cutoff_start_time >= timedelta(
+                    seconds=config.auto_stop_min_duration_for_cutoff
                 ):
                     _LOGGER.info(
                         "%s: Auto-stopping shot due to flow cutoff. Flow %.2fg/s < threshold %.2fg/s for %.2fs",

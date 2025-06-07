@@ -36,7 +36,7 @@ async def async_setup_bookoo_integration(
 
     # Mock the BookooScale connection during setup to avoid actual Bluetooth interactions
     with patch(
-        "custom_components.bookoo.aiobookoov2.BookooScale.connect",
+        "aiobookoov2.bookooscale.BookooScale.connect",
         new_callable=AsyncMock,
     ):
         with patch(
