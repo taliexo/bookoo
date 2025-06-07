@@ -141,6 +141,102 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
         if coordinator.last_shot_data
         else None,
     ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_channeling_status",
+        translation_key="last_shot_channeling_status",
+        icon="mdi:chart-scatter-plot",
+        value_fn=lambda coordinator: coordinator.last_shot_data.channeling_status
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_pre_infusion_duration",
+        translation_key="last_shot_pre_infusion_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_display_precision=1,
+        icon="mdi:timelapse",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: coordinator.last_shot_data.pre_infusion_duration_seconds
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_extraction_uniformity",
+        translation_key="last_shot_extraction_uniformity",
+        native_unit_of_measurement=PERCENTAGE,
+        suggested_display_precision=1,
+        icon="mdi:chart-bell-curve-cumulative",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: (
+            coordinator.last_shot_data.extraction_uniformity_metric * 100.0
+            if coordinator.last_shot_data
+            and coordinator.last_shot_data.extraction_uniformity_metric is not None
+            else None
+        ),
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_average_flow_rate",
+        translation_key="last_shot_average_flow_rate",
+        device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
+        native_unit_of_measurement=UnitOfVolumeFlowRate.MILLILITERS_PER_SECOND,
+        suggested_display_precision=1,
+        icon="mdi:water-pump",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: coordinator.last_shot_data.average_flow_rate_gps
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_peak_flow_rate",
+        translation_key="last_shot_peak_flow_rate",
+        device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
+        native_unit_of_measurement=UnitOfVolumeFlowRate.MILLILITERS_PER_SECOND,
+        suggested_display_precision=1,
+        icon="mdi:water-pump-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: coordinator.last_shot_data.peak_flow_rate_gps
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_time_to_first_flow",
+        translation_key="last_shot_time_to_first_flow",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_display_precision=1,
+        icon="mdi:speedometer-slow",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: coordinator.last_shot_data.time_to_first_flow_seconds
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_time_to_peak_flow",
+        translation_key="last_shot_time_to_peak_flow",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_display_precision=1,
+        icon="mdi:speedometer-medium",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: coordinator.last_shot_data.time_to_peak_flow_seconds
+        if coordinator.last_shot_data
+        else None,
+    ),
+    BookooDynamicUnitSensorEntityDescription(
+        key="last_shot_quality_score",
+        translation_key="last_shot_quality_score",
+        native_unit_of_measurement=PERCENTAGE,
+        suggested_display_precision=1,
+        icon="mdi:chart-gantt",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coordinator: (
+            round(coordinator.last_shot_data.shot_quality_score, 1)
+            if coordinator.last_shot_data
+            and coordinator.last_shot_data.shot_quality_score is not None
+            else None
+        ),
+    ),
     # Real-time Analytics Sensors
     BookooSensorEntityDescription(
         key="current_shot_channeling_status",
