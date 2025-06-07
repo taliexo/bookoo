@@ -473,6 +473,15 @@ class SessionManager:
                 "start_trigger": self.session_start_trigger,
                 "stop_reason": stop_reason,
                 "input_parameters": dict(self.session_input_parameters),
+                "channeling_status": self.coordinator.realtime_channeling_status,
+                "pre_infusion_detected": self.coordinator.realtime_pre_infusion_active,
+                "pre_infusion_duration_seconds": self.coordinator.realtime_pre_infusion_duration,
+                "extraction_uniformity_metric": self.coordinator.realtime_extraction_uniformity,
+                "shot_quality_score": round(
+                    self.coordinator.realtime_shot_quality_score or 0.0, 1
+                )
+                if self.coordinator.realtime_shot_quality_score is not None
+                else None,
             }
 
         final_weight_grams = (
