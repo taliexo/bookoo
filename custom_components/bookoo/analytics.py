@@ -257,3 +257,60 @@ class ShotAnalyzer:
                 time_at_peak_flow = dp.elapsed_time
 
         return round(time_at_peak_flow, 2) if time_at_peak_flow is not None else None
+
+    def analyze_shot_profile(
+        self,
+        flow_profile: FlowProfile,
+        scale_timer_profile: ScaleTimerProfile,  # Kept for consistency, used by identify_pre_infusion
+    ) -> dict[str, any]:
+        """Analyzes the complete shot profile and returns a dictionary of metrics."""
+        channeling_status = self.detect_channeling(flow_profile)
+        pre_infusion_detected, pre_infusion_duration_seconds = (
+            self.identify_pre_infusion(flow_profile, scale_timer_profile)
+        )
+        extraction_uniformity = self.calculate_extraction_uniformity(flow_profile)
+        average_flow_rate = self.calculate_average_flow_rate(flow_profile)
+        peak_flow_rate = self.calculate_peak_flow_rate(flow_profile)
+        time_to_first_flow = self.calculate_time_to_first_flow(flow_profile)
+        time_to_peak_flow = self.calculate_time_to_peak_flow(flow_profile)
+
+        # Calculate shot_quality_score (0-100)
+        # Base score from extraction uniformity (up to 70 points)
+        quality_from_uniformity = (extraction_uniformity or 0.0) * 70.0
+
+        # Penalty from channeling (deducted from a base of 30 points)
+        base_score_for_no_channeling = 30.0
+        channeling_penalty = 0.0
+        if channeling_status == "Mild Channeling (High Variation)":
+            channeling_penalty = 10.0
+        elif channeling_status == "Suspected Channeling (Spike)":
+            channeling_penalty = 15.0
+        elif channeling_status in [
+            "Moderate Channeling (High Variation & Spike)",
+            "Mild-Moderate Channeling (Variation & Notable Peak)",
+        ]:
+            channeling_penalty = 30.0  # Max penalty for severe channeling
+        elif (
+            channeling_status == "Undetermined (not enough data after initial phase)"
+            or channeling_status == "Undetermined (not enough significant flow data)"
+        ):
+            channeling_penalty = 5.0  # Small penalty for undetermined status
+        # "None (no significant flow)" or "None" implies no channeling, so 0 penalty.
+
+        score_after_channeling = base_score_for_no_channeling - channeling_penalty
+
+        shot_quality_score = quality_from_uniformity + score_after_channeling
+        # Clamp score between 0 and 100, round to one decimal place
+        shot_quality_score = max(0.0, min(100.0, round(shot_quality_score, 1)))
+
+        return {
+            "channeling_status": channeling_status,
+            "pre_infusion_detected": pre_infusion_detected,
+            "pre_infusion_duration_seconds": pre_infusion_duration_seconds,
+            "extraction_uniformity_metric": extraction_uniformity,
+            "average_flow_rate_gps": average_flow_rate,
+            "peak_flow_rate_gps": peak_flow_rate,
+            "time_to_first_flow_seconds": time_to_first_flow,
+            "time_to_peak_flow_seconds": time_to_peak_flow,
+            "shot_quality_score": shot_quality_score,
+        }
