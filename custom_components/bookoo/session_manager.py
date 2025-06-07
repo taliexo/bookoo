@@ -348,10 +348,32 @@ class SessionManager:
             # Add entry_id to the raw_event_data from the coordinator's config entry
             raw_event_data["entry_id"] = self.coordinator.config_entry.entry_id
 
-            validated_shot_data = BookooShotCompletedEventDataModel(
-                **dict(raw_event_data)
+            # Create a temporary model from raw_event_data to pass to the recommendation generator
+            # This ensures all other analytics are available for the recommendation logic.
+            temp_shot_data_for_recommendation = BookooShotCompletedEventDataModel(
+                **dict(raw_event_data.copy())  # Use a copy
             )
-            self.last_shot_data = validated_shot_data
+
+            # Generate the recommendation based on this temporary complete model
+            next_shot_recommendation = (
+                self.coordinator.shot_analyzer.generate_next_shot_recommendation(
+                    temp_shot_data_for_recommendation
+                )
+            )
+
+            # Add the recommendation to a new dictionary that will form the final model
+            final_raw_event_data_with_recommendation = raw_event_data.copy()
+            final_raw_event_data_with_recommendation["next_shot_recommendation"] = (
+                next_shot_recommendation
+            )
+
+            # Create the final, complete model instance that includes the recommendation
+            # This instance is stored in self.last_shot_data and used for events/storage.
+            self.last_shot_data = BookooShotCompletedEventDataModel(
+                **dict(final_raw_event_data_with_recommendation)
+            )
+            # Use this final model for logging and event data as well
+            validated_shot_data = self.last_shot_data
             _LOGGER.debug(
                 "%s: Shot data prepared for event and storage: %s",
                 self.coordinator.name,

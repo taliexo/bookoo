@@ -3,7 +3,11 @@
 import math
 from dataclasses import dataclass
 
-from .types import FlowProfile, ScaleTimerProfile
+from .types import (
+    FlowProfile,
+    ScaleTimerProfile,
+    BookooShotCompletedEventDataModel,
+)
 
 
 @dataclass
@@ -314,3 +318,132 @@ class ShotAnalyzer:
             "time_to_peak_flow_seconds": time_to_peak_flow,
             "shot_quality_score": shot_quality_score,
         }
+
+    def generate_next_shot_recommendation(
+        self,
+        completed_shot_data: "BookooShotCompletedEventDataModel | None",
+    ) -> str | None:
+        """Generates a textual recommendation for the next shot based on the last one.
+
+        Args:
+            completed_shot_data: The data model of the completed shot.
+
+        Returns:
+            A string recommendation, or None if no specific recommendation is generated.
+        """
+        if not completed_shot_data:
+            return "No previous shot data to analyze."
+
+        recommendations = []
+        shot = completed_shot_data
+
+        # Duration feedback
+        if shot.duration_seconds < 18:
+            recommendations.append(
+                "Shot was very fast (under 18s). Aim for a longer extraction. Try a finer grind or increase dose."
+            )
+        elif shot.duration_seconds < 22:
+            recommendations.append(
+                "Shot was a bit fast (under 22s). Consider a slightly finer grind or a small dose increase."
+            )
+        elif shot.duration_seconds > 35:
+            recommendations.append(
+                "Shot was very long (over 35s). Aim for a shorter extraction. Try a coarser grind or decrease dose."
+            )
+        elif shot.duration_seconds > 30:
+            recommendations.append(
+                "Shot was a bit long (over 30s). Consider a slightly coarser grind or a small dose decrease."
+            )
+        else:
+            recommendations.append(
+                "Shot duration (%.1fs) was in a good range (22-30s)."
+                % shot.duration_seconds
+            )
+
+        # Channeling feedback
+        if (
+            shot.channeling_status
+            and "None" not in shot.channeling_status
+            and "Undetermined" not in shot.channeling_status
+        ):
+            recommendations.append(
+                f"Detected {shot.channeling_status.lower()}. Focus on puck preparation: ensure even distribution and tamping."
+            )
+        elif shot.channeling_status == "None (no significant flow)":
+            recommendations.append(
+                "No significant flow detected, check for a choked machine or very fine grind."
+            )
+        else:
+            recommendations.append(
+                "Good puck preparation, no significant channeling detected."
+            )
+
+        # Pre-infusion feedback
+        if (
+            shot.pre_infusion_detected
+            and shot.pre_infusion_duration_seconds is not None
+        ):
+            if shot.pre_infusion_duration_seconds < 3:
+                recommendations.append(
+                    "Pre-infusion was short (%.1fs). If intended, this is fine."
+                    % shot.pre_infusion_duration_seconds
+                )
+            elif shot.pre_infusion_duration_seconds > 10:
+                recommendations.append(
+                    "Pre-infusion was long (%.1fs). Ensure this is intended for your recipe."
+                    % shot.pre_infusion_duration_seconds
+                )
+            else:
+                recommendations.append(
+                    "Pre-infusion time (%.1fs) seems reasonable."
+                    % shot.pre_infusion_duration_seconds
+                )
+
+        # Final weight - this is highly dependent on target, so generic advice
+        # Example: Assuming a 1:2 ratio and input dose might be around 18g, target ~36g
+        if shot.input_parameters and shot.input_parameters.get("bean_weight"):
+            try:
+                dose = float(shot.input_parameters.get("bean_weight"))
+                target_yield_min = dose * 1.8
+                target_yield_max = dose * 2.2
+                if shot.final_weight_grams < target_yield_min:
+                    recommendations.append(
+                        "Yield (%.1fg) was low for a %.1fg dose. Consider extending the shot or adjusting grind for more output."
+                        % (shot.final_weight_grams, dose)
+                    )
+                elif shot.final_weight_grams > target_yield_max:
+                    recommendations.append(
+                        "Yield (%.1fg) was high for a %.1fg dose. Consider stopping the shot earlier or adjusting grind for less output."
+                        % (shot.final_weight_grams, dose)
+                    )
+            except ValueError:
+                pass  # Unable to parse bean_weight
+
+        # Quality Score Feedback
+        if shot.shot_quality_score is not None:
+            if shot.shot_quality_score >= 85:
+                recommendations.append(
+                    f"Excellent shot quality score ({shot.shot_quality_score:.0f}/100)!"
+                )
+            elif shot.shot_quality_score >= 70:
+                recommendations.append(
+                    f"Good shot quality score ({shot.shot_quality_score:.0f}/100)."
+                )
+            elif shot.shot_quality_score >= 50:
+                recommendations.append(
+                    f"Decent shot quality score ({shot.shot_quality_score:.0f}/100), but room for improvement."
+                )
+            else:
+                recommendations.append(
+                    f"Low shot quality score ({shot.shot_quality_score:.0f}/100). Review other metrics for clues."
+                )
+
+        if not recommendations:
+            return "Review all shot parameters and aim for consistency in your process."
+
+        # Combine recommendations, prioritizing more critical ones or summarizing
+        # For now, just join them. You might want more sophisticated joining/prioritization.
+        final_recommendation = "Next shot tips: " + " ".join(recommendations)
+        if len(final_recommendation) > 255:  # HA state character limit
+            return final_recommendation[:252] + "..."
+        return final_recommendation

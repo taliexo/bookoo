@@ -237,6 +237,14 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
             else None
         ),
     ),
+    BookooSensorEntityDescription(
+        key="last_shot_next_shot_recommendation",
+        translation_key="last_shot_next_shot_recommendation",
+        icon="mdi:lightbulb-on-outline",
+        value_fn=lambda coordinator: coordinator.last_shot_data.next_shot_recommendation
+        if coordinator.last_shot_data
+        else None,
+    ),
     # Real-time Analytics Sensors
     BookooSensorEntityDescription(
         key="current_shot_channeling_status",

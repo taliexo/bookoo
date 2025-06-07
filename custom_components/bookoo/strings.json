@@ -126,6 +126,33 @@
       },
       "current_shot_quality_score": {
         "name": "Current Shot Quality Score"
+      },
+      "last_shot_channeling_status": {
+        "name": "Last Shot Channeling Status"
+      },
+      "last_shot_pre_infusion_duration": {
+        "name": "Last Shot Pre-infusion Duration"
+      },
+      "last_shot_extraction_uniformity": {
+        "name": "Last Shot Extraction Uniformity"
+      },
+      "last_shot_average_flow_rate": {
+        "name": "Last Shot Average Flow Rate"
+      },
+      "last_shot_peak_flow_rate": {
+        "name": "Last Shot Peak Flow Rate"
+      },
+      "last_shot_time_to_first_flow": {
+        "name": "Last Shot Time to First Flow"
+      },
+      "last_shot_time_to_peak_flow": {
+        "name": "Last Shot Time to Peak Flow"
+      },
+      "last_shot_quality_score": {
+        "name": "Last Shot Quality Score"
+      },
+      "last_shot_next_shot_recommendation": {
+        "name": "Last Shot - Next Shot Recommendation"
       }
     }
   },

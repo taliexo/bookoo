@@ -49,6 +49,7 @@ class BookooShotCompletedEventDataModel(BaseModel):
     time_to_first_flow_seconds: float | None = None
     time_to_peak_flow_seconds: float | None = None
     shot_quality_score: float | None = None
+    next_shot_recommendation: str | None = None
 
     model_config = {
         "frozen": True  # Make instances immutable after creation
