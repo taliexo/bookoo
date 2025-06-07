@@ -24,8 +24,8 @@ from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import callback  # Added for @callback decorator
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
-    BooleanSelector,  # Added
-    BooleanSelectorConfig,  # Added
+    BooleanSelector,
+    BooleanSelectorConfig,
     EntitySelector,
     EntitySelectorConfig,
     SelectOptionDict,
