@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TypeAlias  # For Optional type hint and TypeAlias
+from typing import TypeAlias
 
 from aiobookoov2.bookooscale import BookooScale
 from aiobookoov2.const import (
@@ -33,10 +33,10 @@ _LOGGER = logging.getLogger(__name__)
 # Type alias for the config entry specific to this integration
 BookooConfigEntry: TypeAlias = ConfigEntry["BookooCoordinator"]
 
-SCAN_INTERVAL = timedelta(seconds=5)  # Example, adjust as needed
+SCAN_INTERVAL = timedelta(seconds=5)
 ANALYTICS_UPDATE_INTERVAL = timedelta(
-    seconds=0.5
-)  # Update analytics at most every 0.5 seconds
+    seconds=0.2
+)  # Update analytics at most every 0.2 seconds
 
 
 class BookooCoordinator(
@@ -52,7 +52,7 @@ class BookooCoordinator(
     - Providing data updates to registered listeners (entities).
     """
 
-    config_entry: BookooConfigEntry  # Type hint for the config entry
+    config_entry: BookooConfigEntry
 
     def __init__(self, hass: HomeAssistant, entry: BookooConfigEntry) -> None:
         """Initialize coordinator."""

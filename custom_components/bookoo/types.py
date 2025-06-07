@@ -4,7 +4,6 @@ from typing import (
     NamedTuple,
 )
 
-# TypedDict removed for this specific type
 from pydantic import BaseModel
 
 
@@ -54,4 +53,3 @@ class BookooShotCompletedEventDataModel(BaseModel):
     model_config = {
         "frozen": True  # Make instances immutable after creation
     }
-    # orm_mode is now from_attributes = True in model_config if needed

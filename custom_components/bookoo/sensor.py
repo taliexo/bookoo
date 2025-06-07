@@ -2,7 +2,7 @@
 
 from collections.abc import Callable  # noqa: I001
 from dataclasses import dataclass
-from datetime import datetime  # Added for type hint
+from datetime import datetime
 
 from aiobookoov2.bookooscale import BookooDeviceState
 from homeassistant.components.sensor import (
@@ -15,13 +15,13 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfVolumeFlowRate, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.util import dt as dt_util  # Added for time calculations
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import (
     BookooConfigEntry,
     BookooCoordinator,
-)  # Added BookooCoordinator import
+)
 from .entity import BookooEntity
 
 # Import typing for casts and Optional if not already present from other stdlib imports
@@ -39,9 +39,7 @@ class BookooSensorEntityDescription(SensorEntityDescription):
         value_fn: Callable that takes the BookooCoordinator and returns the sensor's state.
     """
 
-    value_fn: Callable[
-        [BookooCoordinator], int | float | str | datetime | None
-    ]  # Added datetime for timestamp sensors
+    value_fn: Callable[[BookooCoordinator], int | float | str | datetime | None]
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -86,7 +84,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     # Current Shot Sensor
     BookooDynamicUnitSensorEntityDescription(
         key="current_shot_duration",
-        translation_key="current_shot_duration",  # Needs strings.json
+        translation_key="current_shot_duration",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_display_precision=1,
@@ -103,7 +101,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     # Last Shot Sensors
     BookooDynamicUnitSensorEntityDescription(
         key="last_shot_duration",
-        translation_key="last_shot_duration",  # Needs strings.json
+        translation_key="last_shot_duration",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_display_precision=1,
@@ -114,7 +112,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooDynamicUnitSensorEntityDescription(
         key="last_shot_final_weight",
-        translation_key="last_shot_final_weight",  # Needs strings.json
+        translation_key="last_shot_final_weight",
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.GRAMS,
         suggested_display_precision=1,
@@ -125,7 +123,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooDynamicUnitSensorEntityDescription(
         key="last_shot_start_time",
-        translation_key="last_shot_start_time",  # Needs strings.json
+        translation_key="last_shot_start_time",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-start",
         value_fn=lambda coordinator: (
@@ -137,7 +135,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooDynamicUnitSensorEntityDescription(
         key="last_shot_status",
-        translation_key="last_shot_status",  # Needs strings.json
+        translation_key="last_shot_status",
         icon="mdi:list-status",
         value_fn=lambda coordinator: coordinator.last_shot_data.status
         if coordinator.last_shot_data
@@ -146,13 +144,13 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     # Real-time Analytics Sensors
     BookooSensorEntityDescription(
         key="current_shot_channeling_status",
-        translation_key="current_shot_channeling_status",  # Needs strings.json
-        icon="mdi:chart-scatter-plot",  # Example icon
+        translation_key="current_shot_channeling_status",
+        icon="mdi:chart-scatter-plot",
         value_fn=lambda coordinator: coordinator.realtime_channeling_status,
     ),
     BookooSensorEntityDescription(
         key="current_shot_pre_infusion_duration",
-        translation_key="current_shot_pre_infusion_duration",  # Needs strings.json
+        translation_key="current_shot_pre_infusion_duration",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
         suggested_display_precision=1,
@@ -161,10 +159,10 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooSensorEntityDescription(
         key="current_shot_extraction_uniformity",
-        translation_key="current_shot_extraction_uniformity",  # Needs strings.json
+        translation_key="current_shot_extraction_uniformity",
         native_unit_of_measurement=PERCENTAGE,  # Will be 0.0-1.0, displayed as %
         suggested_display_precision=1,
-        icon="mdi:chart-bell-curve-cumulative",  # Example icon
+        icon="mdi:chart-bell-curve-cumulative",
         state_class=SensorStateClass.MEASUREMENT,  # Good for % values
         value_fn=lambda coordinator: (
             coordinator.realtime_extraction_uniformity * 100.0
@@ -174,7 +172,7 @@ SENSORS: tuple[BookooSensorEntityDescription, ...] = (
     ),
     BookooSensorEntityDescription(
         key="current_shot_quality_score",
-        translation_key="current_shot_quality_score",  # Needs strings.json
+        translation_key="current_shot_quality_score",
         native_unit_of_measurement=PERCENTAGE,
         icon="mdi:chart-gantt",  # Or mdi:gauge, mdi:speedometer
         state_class=SensorStateClass.MEASUREMENT,
@@ -256,7 +254,7 @@ class BookooSensor(BookooEntity, SensorEntity):
     @property
     def native_value(
         self,
-    ) -> int | float | str | datetime | None:  # Added datetime for timestamp sensors
+    ) -> int | float | str | datetime | None:
         """Return the state of the entity."""
         return self.entity_description.value_fn(self.coordinator)  # Pass coordinator
 

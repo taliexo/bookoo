@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .types import (
-    BookooShotCompletedEventDataModel,  # Assuming this is the Pydantic model
+    BookooShotCompletedEventDataModel,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -136,6 +136,3 @@ async def async_delete_shot_history(hass: HomeAssistant) -> None:
         _LOGGER.error(
             "Error deleting Bookoo shot history from HA Store: %s", e, exc_info=True
         )
-
-
-# Note: `async_init_db` is no longer needed as Store handles its own initialization.

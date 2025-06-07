@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from .storage import async_add_shot_record
 from .types import (
-    BookooShotCompletedEventDataModel,  # Changed from TypedDict to Pydantic Model
+    BookooShotCompletedEventDataModel,
     FlowDataPoint,
     ScaleTimerDataPoint,
     WeightDataPoint,
@@ -113,9 +113,6 @@ class SessionManager:
             trigger: A string describing what triggered the shot start (e.g., 'service', 'auto_timer').
         """
         async with self._session_lock:
-            # This block was incorrectly modified by the previous tool call and is being reverted/ignored.
-            # The actual target for the first model_dump is later in the stop_session method.
-
             if self.is_shot_active:
                 _LOGGER.warning(
                     "Attempted to start new shot (trigger: %s) but one is active. This will now raise an error to the user.",
