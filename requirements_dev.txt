@@ -1,0 +1,17 @@
+homeassistant
+pytest-homeassistant-custom-component
+pytest
+pytest-asyncio
+ruff
+mypy
+aiobookoov2
+pytest-mock
+
+
+# Add the specific version of aiobookoov2 if it's a dependency
+# For example:
+# aiobookoov2==0.1.0
+
+# If aiobookoov2 is part of this repository (e.g., a submodule or local lib),
+# it might not need to be in requirements_dev.txt for testing,
+# but ensure PYTHONPATH is set up correctly if so.

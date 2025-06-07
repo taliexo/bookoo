@@ -51,6 +51,7 @@ class BookooShotCompletedEventDataModel(BaseModel):
     time_to_peak_flow_seconds: float | None = None
     shot_quality_score: float | None = None
 
-    class Config:
-        allow_mutation = False  # Make instances immutable after creation
-        # orm_mode = True # If you were creating this from an ORM model
+    model_config = {
+        "frozen": True  # Make instances immutable after creation
+    }
+    # orm_mode is now from_attributes = True in model_config if needed

@@ -1,0 +1,12 @@
+# requirements_test.txt
+-r requirements_dev.txt
+
+# Home Assistant test framework
+pytest-homeassistant-custom-component>=0.13.0
+homeassistant>=2025.1.0
+
+# Additional testing tools
+pytest-timeout>=2.1.0
+pytest-xdist>=3.0.0  # Parallel test execution
+aioresponses>=0.7.0  # Mock async HTTP
+time-machine>=2.10.0  # Better than freezegun for async

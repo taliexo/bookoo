@@ -637,7 +637,8 @@ class SessionManager:
                     elapsed_time=round(elapsed_time, 2), flow_rate=round(flow_rate, 2)
                 )
             )
-        self._check_auto_stop_flow_cutoff(elapsed_time, flow_rate)
+            # Only check auto-stop if the shot is active, as flow data is only relevant then
+            self._check_auto_stop_flow_cutoff(elapsed_time, flow_rate)
 
     def add_weight_data(self, elapsed_time: float, weight: float) -> None:
         """Adds a weight data point to the current session's profile.

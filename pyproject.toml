@@ -1,0 +1,25 @@
+# pyproject.toml additions
+[tool.pytest.ini_options]
+testpaths = ["tests"] # Adjusted path to be relative to root for testpaths
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["custom_components/bookoo"]
+omit = [
+    "*/tests/*",
+    "custom_components/bookoo/__init__.py", # Adjusted path for omit
+]
+
+[tool.coverage.report]
+precision = 2 # Corrected to integer
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
